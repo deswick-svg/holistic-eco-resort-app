@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Holistic Eco-Resort",
+    "slug": "holistic-eco-resort",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.holisticecoresort.guest"
+    },
+    "android": {
+      "package": "com.holisticecoresort.guest"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
