@@ -3,7 +3,34 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { simplotel, LiveStayRate } from "../services/simplotel";
+import {
+  simplotel,
+  AvailabilityRequest,
+  BookingGuestDetails,
+  BookingPreparationResponse,
+  JsonValue,
+  LiveStayRate,
+} from "../services/simplotel";
+
+type BookingStep = "search" | "guest" | "summary" | "prepared";
+
+function formatDisplayApiDate(date: string) {
+  const [year, month, day] = date.split("-");
+  return `${day}-${month}-${year}`;
+}
+
+function getPenaltyText(penalty: JsonValue) {
+  if (!penalty || Array.isArray(penalty) || typeof penalty !== "object") {
+    return "Cancellation policy supplied by Simplotel";
+  }
+  const description = penalty.description;
+  const name = penalty.name;
+  return typeof description === "string"
+    ? description
+    : typeof name === "string"
+      ? name
+      : "Cancellation policy supplied by Simplotel";
+}
 
 function RoomGallery({ rate }: { rate: LiveStayRate }) {
   const [activeImage, setActiveImage] = useState(0);
@@ -60,6 +87,25 @@ function RoomGallery({ rate }: { rate: LiveStayRate }) {
   );
 }
 
+function SummaryRow({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <View style={styles.summaryRow}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={[styles.summaryValue, strong && styles.summaryValueStrong]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 export function BookingScreen({ onBack }: { onBack: () => void }) {
   const [checkIn, setCheckIn] = useState<Date | null>(null);
   const [checkOut, setCheckOut] = useState<Date | null>(null);
@@ -67,12 +113,24 @@ export function BookingScreen({ onBack }: { onBack: () => void }) {
   const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
   const [adults, setAdults] = useState("2");
   const [children, setChildren] = useState("0");
+  const [childAges, setChildAges] = useState("");
   const [rooms, setRooms] = useState("1");
 
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [liveRates, setLiveRates] = useState<LiveStayRate[]>([]);
   const [error, setError] = useState("");
+  const [step, setStep] = useState<BookingStep>("search");
+  const [selectedRate, setSelectedRate] = useState<LiveStayRate | null>(null);
+  const [searchRequest, setSearchRequest] = useState<AvailabilityRequest | null>(null);
+  const [guest, setGuest] = useState<BookingGuestDetails>({
+    name: "",
+    email: "",
+    phone: "+91",
+  });
+  const [preparing, setPreparing] = useState(false);
+  const [flowError, setFlowError] = useState("");
+  const [preparation, setPreparation] = useState<BookingPreparationResponse | null>(null);
   const formatDate = (date: Date | null) => {
   if (!date) return "DD-MM-YYYY";
 
@@ -100,19 +158,46 @@ const formatApiDate = (date: Date) => {
     return;
   }
 
+  const adultCount = Number(adults);
+  const childCount = Number(children);
+  const roomCount = Number(rooms);
+  const parsedChildAges = childCount > 0
+    ? childAges.split(",").map((age) => Number(age.trim()))
+    : [];
+
+  if (
+    !Number.isInteger(adultCount) || adultCount < 1 || adultCount > 4 ||
+    !Number.isInteger(childCount) || childCount < 0 || childCount > 4 ||
+    !Number.isInteger(roomCount) || roomCount < 1
+  ) {
+    setError("Enter valid room occupancy details.");
+    return;
+  }
+
+  if (
+    parsedChildAges.length !== childCount ||
+    parsedChildAges.some((age) => !Number.isInteger(age) || age < 0 || age > 17)
+  ) {
+    setError("Enter one age from 0 to 17 for each child, separated by commas.");
+    return;
+  }
+
   try {
     setLoading(true);
     setError("");
 
-    const rates = await simplotel.getAvailability({
+    const request: AvailabilityRequest = {
       checkIn: formatApiDate(checkIn),
       checkOut: formatApiDate(checkOut),
-      adults: Number(adults),
-      children: Number(children),
-      rooms: Number(rooms),
-    });
+      adults: adultCount,
+      children: childCount,
+      childAge: parsedChildAges,
+      rooms: roomCount,
+    };
+    const rates = await simplotel.getAvailability(request);
 
     setLiveRates(rates);
+    setSearchRequest(request);
     setSearched(true);
   } catch (err) {
     console.error(err);
@@ -123,6 +208,250 @@ const formatApiDate = (date: Date) => {
     setLoading(false);
   }
 };
+
+  const handleSelectRoom = (rate: LiveStayRate) => {
+    if (!searchRequest || rate.availableUnits < searchRequest.rooms) {
+      setError("The requested number of rooms is not available.");
+      return;
+    }
+    setSelectedRate(rate);
+    setFlowError("");
+    setPreparation(null);
+    setStep("guest");
+  };
+
+  const handleGuestContinue = () => {
+    const normalizedGuest = {
+      name: guest.name.trim(),
+      email: guest.email.trim(),
+      phone: guest.phone.trim(),
+    };
+    if (
+      !normalizedGuest.name ||
+      !/^\S+@\S+\.\S+$/.test(normalizedGuest.email) ||
+      !/^\+\d+$/.test(normalizedGuest.phone)
+    ) {
+      setFlowError(
+        "Enter a name, valid email, and phone number with international country code."
+      );
+      return;
+    }
+    setGuest(normalizedGuest);
+    setFlowError("");
+    setStep("summary");
+  };
+
+  const handlePrepareBooking = async () => {
+    if (!searchRequest || !selectedRate) return;
+    try {
+      setPreparing(true);
+      setFlowError("");
+      const prepared = await simplotel.prepareBooking({
+        request: searchRequest,
+        selectedRate,
+        guest,
+      });
+      setPreparation(prepared);
+      setStep("prepared");
+    } catch (prepareError) {
+      setFlowError(
+        prepareError instanceof Error
+          ? prepareError.message
+          : "Booking details could not be prepared."
+      );
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  if (step !== "search" && selectedRate && searchRequest) {
+    const review = preparation?.summary;
+    const displayRoomName = (review?.roomName ?? selectedRate.roomName).replace(
+      " at Holistic Eco Resort and Ayurvedic Retreat",
+      ""
+    );
+    const displayRoomPrice =
+      review?.roomPrice ??
+      Number(selectedRate.bookingSelection.totalPrice) * searchRequest.rooms;
+    const displayTaxes =
+      review?.taxesAndFees ??
+      Number(selectedRate.bookingSelection.totalTaxesAndFees) *
+        searchRequest.rooms;
+    const displayTotal =
+      review?.totalAmount ?? selectedRate.totalAmount * searchRequest.rooms;
+    const displayGuest = review?.customerDetail ?? {
+      ...guest,
+      bookingForSelf: true as const,
+    };
+
+    return (
+      <View style={styles.page}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => {
+              setFlowError("");
+              if (step === "guest") setStep("search");
+              else if (step === "summary") setStep("guest");
+              else setStep("summary");
+            }}
+            style={styles.back}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.ink} />
+          </Pressable>
+          <Text style={styles.title}>
+            {step === "guest"
+              ? "Guest details"
+              : step === "summary"
+                ? "Booking summary"
+                : "Final review"}
+          </Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.body}>
+          {step === "guest" ? (
+            <>
+              <Text style={styles.headline}>Who is staying?</Text>
+              <Text style={styles.sub}>
+                This flow currently supports bookings made for yourself.
+              </Text>
+              <View style={styles.formCard}>
+                <Text style={styles.label}>Full name</Text>
+                <TextInput
+                  value={guest.name}
+                  onChangeText={(name) => setGuest({ ...guest, name })}
+                  autoCapitalize="words"
+                  style={styles.input}
+                />
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  value={guest.email}
+                  onChangeText={(email) => setGuest({ ...guest, email })}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  style={styles.input}
+                />
+                <Text style={styles.label}>Phone with country code</Text>
+                <TextInput
+                  value={guest.phone}
+                  onChangeText={(phone) => setGuest({ ...guest, phone })}
+                  keyboardType="phone-pad"
+                  style={styles.input}
+                />
+                <Pressable style={styles.button} onPress={handleGuestContinue}>
+                  <Text style={styles.buttonText}>Review booking</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.headline}>{displayRoomName}</Text>
+              <View style={styles.summaryCard}>
+                <SummaryRow
+                  label="Check-in"
+                  value={formatDisplayApiDate(review?.checkIn ?? searchRequest.checkIn)}
+                />
+                <SummaryRow
+                  label="Check-out"
+                  value={formatDisplayApiDate(review?.checkOut ?? searchRequest.checkOut)}
+                />
+                <SummaryRow label="Rooms" value={String(searchRequest.rooms)} />
+                <SummaryRow
+                  label="Guests per room"
+                  value={`${searchRequest.adults} adult${searchRequest.adults === 1 ? "" : "s"}, ${searchRequest.children} children`}
+                />
+                {searchRequest.childAge.length > 0 ? (
+                  <SummaryRow
+                    label="Child ages"
+                    value={searchRequest.childAge.join(", ")}
+                  />
+                ) : null}
+                <SummaryRow
+                  label="Rate plan"
+                  value={review?.ratePlanName ?? selectedRate.ratePlanName ?? "Rate plan"}
+                />
+                <SummaryRow label="Guest" value={displayGuest.name} />
+                <SummaryRow label="Email" value={displayGuest.email} />
+                <SummaryRow label="Phone" value={displayGuest.phone} />
+                <View style={styles.summaryDivider} />
+                <SummaryRow
+                  label="Room price"
+                  value={`₹${displayRoomPrice.toLocaleString("en-IN")}`}
+                />
+                <SummaryRow
+                  label="Taxes and fees"
+                  value={`₹${displayTaxes.toLocaleString("en-IN")}`}
+                />
+                <SummaryRow
+                  label={step === "prepared" ? "Validated total" : "Displayed total"}
+                  value={`₹${displayTotal.toLocaleString("en-IN")}`}
+                  strong
+                />
+                <Text style={styles.policyText}>
+                  {getPenaltyText(review?.penalty ?? selectedRate.bookingSelection.ratePlan.penalty)}
+                </Text>
+              </View>
+
+              {step === "summary" ? (
+                <>
+                  <View style={styles.warningNotice}>
+                    <Text style={styles.warningText}>
+                      This validates current availability and prepares documented booking data. It does not create a reservation or process payment.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={[styles.button, preparing && styles.buttonDisabled]}
+                    onPress={handlePrepareBooking}
+                    disabled={preparing}
+                  >
+                    <Text style={styles.buttonText}>
+                      {preparing ? "Revalidating..." : "Validate booking details"}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : preparation ? (
+                <>
+                  <View style={styles.preparedCard}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={42}
+                      color={colors.leaf}
+                    />
+                    <Text style={styles.preparedTitle}>Ready for final confirmation</Text>
+                    <Text style={styles.preparedText}>
+                      Live availability was rechecked and {preparation.preservedBookingData.lineItemCount} complete room line item{preparation.preservedBookingData.lineItemCount === 1 ? " was" : "s were"} prepared on the server.
+                    </Text>
+                    <Text style={styles.notBookedText}>
+                      No booking has been created and no payment has been requested.
+                    </Text>
+                  </View>
+                  <Pressable
+                    testID="booking-final-action"
+                    style={[styles.button, styles.finalActionDisabled]}
+                    disabled={true}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: true }}
+                  >
+                    <Ionicons name="lock-closed" size={17} color={colors.white} />
+                    <Text style={styles.buttonText}>Booking not yet enabled</Text>
+                  </Pressable>
+                  <Text style={styles.finalActionNote}>
+                    This control will remain disabled until payment, inventory-hold, and duplicate-booking behavior are confirmed.
+                  </Text>
+                </>
+              ) : null}
+            </>
+          )}
+
+          {flowError ? (
+            <View style={styles.errorNotice}>
+              <Text style={styles.errorText}>{flowError}</Text>
+            </View>
+          ) : null}
+        </ScrollView>
+      </View>
+    );
+  }
   
 
   return (
@@ -182,10 +511,26 @@ if (selectedDate) {
 <Text style={styles.label}>Children</Text>
 <TextInput
   value={children}
-  onChangeText={setChildren}
+  onChangeText={(value) => {
+    setChildren(value);
+    if (Number(value) === 0) setChildAges("");
+  }}
   keyboardType="number-pad"
   style={styles.input}
 />
+
+{Number(children) > 0 ? (
+  <>
+    <Text style={styles.label}>Child ages (comma-separated)</Text>
+    <TextInput
+      value={childAges}
+      onChangeText={setChildAges}
+      keyboardType="numbers-and-punctuation"
+      placeholder="5, 10"
+      style={styles.input}
+    />
+  </>
+) : null}
 
 <Text style={styles.label}>Rooms</Text>
 <TextInput
@@ -241,7 +586,10 @@ if (selectedDate) {
     ₹{rate.totalAmount.toLocaleString("en-IN")}
   </Text>
 
-  <Pressable style={styles.selectButton}>
+  <Pressable
+    style={styles.selectButton}
+    onPress={() => handleSelectRoom(rate)}
+  >
     <Text style={styles.selectButtonText}>Select room</Text>
   </Pressable>
 </View>
@@ -277,6 +625,118 @@ const styles = StyleSheet.create({
   galleryDotActive: {
     width: 18,
     backgroundColor: colors.forest,
+  },
+  summaryCard: {
+    marginTop: 20,
+    padding: 18,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 18,
+    paddingVertical: 8,
+  },
+  summaryLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.muted,
+  },
+  summaryValue: {
+    flex: 1.4,
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.ink,
+    textAlign: "right",
+  },
+  summaryValueStrong: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.forest,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: colors.line,
+    marginVertical: 8,
+  },
+  policyText: {
+    marginTop: 12,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.muted,
+  },
+  warningNotice: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: "#FFF4D8",
+    borderWidth: 1,
+    borderColor: "#E8CE88",
+  },
+  warningText: {
+    color: "#6B5317",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  preparedCard: {
+    marginTop: 18,
+    padding: 20,
+    borderRadius: 18,
+    backgroundColor: colors.sage,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+  },
+  preparedTitle: {
+    marginTop: 10,
+    fontSize: 21,
+    fontWeight: "800",
+    color: colors.forest,
+  },
+  preparedText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.ink,
+    textAlign: "center",
+  },
+  notBookedText: {
+    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+    color: colors.danger,
+    textAlign: "center",
+  },
+  errorNotice: {
+    marginTop: 14,
+    padding: 13,
+    borderRadius: 12,
+    backgroundColor: "#FBEAEA",
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  finalActionDisabled: {
+    flexDirection: "row",
+    gap: 8,
+    opacity: 0.5,
+  },
+  finalActionNote: {
+    marginTop: 10,
+    paddingHorizontal: 8,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.muted,
+    textAlign: "center",
   },
 
   roomCard: {

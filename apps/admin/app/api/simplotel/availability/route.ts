@@ -19,6 +19,9 @@ export async function POST(request: Request) {
     const adults = Number(body.adults ?? 2);
     const children = Number(body.children ?? 0);
     const rooms = Number(body.rooms ?? 1);
+    const childAge = Array.isArray(body.childAge)
+      ? body.childAge.map(Number)
+      : [];
 
     if (!checkIn || !checkOut) {
       return NextResponse.json(
@@ -34,6 +37,7 @@ export async function POST(request: Request) {
         id: index + 1,
         adults,
         children,
+        ...(children > 0 ? { childAge } : {}),
       })),
       propertyId: SIMPLOTEL_HOTEL_ID,
     };

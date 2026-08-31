@@ -7,7 +7,46 @@ export type AvailabilityRequest = {
   checkOut: string;
   adults: number;
   children: number;
+  childAge: number[];
   rooms: number;
+};
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+export type BookingRateSelection = {
+  roomTypeId: number;
+  ratePlanId: number;
+  occupancyId: string;
+  adults: number;
+  children: number;
+  totalPrice: string;
+  totalTaxesAndFees: string;
+  ratePlan: {
+    rate_plan_id: number;
+    name: string;
+    penalty: JsonValue;
+    secondary_rate_plan_id?: JsonValue;
+    secondary_season_id?: JsonValue;
+    secondary_period_start?: JsonValue;
+    combined_plan?: boolean;
+  };
+  occupancy: {
+    id: string;
+    adults: string;
+    children: string;
+    average_price?: string;
+    total_price?: string;
+    total_room_price?: string;
+    total_taxes_and_fees: string;
+    prices: JsonValue[];
+    addons: JsonValue[];
+  };
 };
 
 export type LiveStayRate = {
@@ -19,6 +58,43 @@ export type LiveStayRate = {
   ratePlanName?: string;
   imageUrl?: string;
   imageGallery?: string[];
+  bookingSelection: BookingRateSelection;
+};
+
+export type BookingGuestDetails = {
+  name: string;
+  email: string;
+  phone: string;
+};
+
+export type BookingPreparationResponse = {
+  status: "PREPARED_NOT_BOOKED";
+  bookingCreationEnabled: false;
+  summary: {
+    checkIn: string;
+    checkOut: string;
+    roomTypeId: number;
+    roomName: string;
+    ratePlanId: number;
+    ratePlanName: string;
+    occupancyId: string;
+    rooms: number;
+    adultsPerRoom: number;
+    childrenPerRoom: number;
+    childAge: number[];
+    roomPrice: number;
+    taxesAndFees: number;
+    totalAmount: number;
+    currency: "INR";
+    penalty: JsonValue;
+    customerDetail: BookingGuestDetails & { bookingForSelf: true };
+  };
+  preservedBookingData: {
+    lineItemCount: number;
+    hasDailyPrices: boolean;
+    hasPenalty: boolean;
+  };
+  unresolvedBeforeBooking: string[];
 };
 
 type RemoteRoomMedia = {
@@ -81,30 +157,124 @@ export const simplotel = {
     return [];
   }
 
-  return data.rooms.map((room: any) => {
+  return data.rooms.flatMap((room: any) => {
     const roomTypeId = String(room.room_type);
     const media = remoteRoomMedia[roomTypeId] ?? getRoomMedia(roomTypeId);
-    const ratePlan = room.rate_plans?.[0];
-    const occupancy = ratePlan?.occupancies?.[0];
 
-    const roomPrice = Number(occupancy?.total_room_price ?? 0);
-    const taxes = Number(occupancy?.total_taxes_and_fees ?? 0);
+    return (room.rate_plans ?? []).flatMap((ratePlan: any) =>
+      (ratePlan.occupancies ?? [])
+        .filter(
+          (occupancy: any) =>
+            Number(occupancy.adults) === request.adults &&
+            Number(occupancy.children) === request.children
+        )
+        .map((occupancy: any) => {
+        const roomPrice = Number(
+          occupancy.total_price ?? occupancy.total_room_price ?? 0
+        );
+        const taxes = Number(occupancy.total_taxes_and_fees ?? 0);
+        const occupancyId = String(occupancy.id ?? "");
+        const ratePlanId = Number(ratePlan.rate_plan_id);
 
-    return {
-      stayId: roomTypeId,
-      roomName: String(room.name ?? "Room"),
-      availableUnits: Number(room.availability ?? 0),
-      totalAmount: roomPrice + taxes,
-      currency: "INR" as const,
-      ratePlanName: ratePlan?.name,
-      imageUrl: media?.primaryImage,
-      imageGallery: media?.gallery,
-    };
+        return {
+          stayId: `${roomTypeId}:${ratePlanId}:${occupancyId}`,
+          roomName: String(room.name ?? "Room"),
+          availableUnits: Number(room.availability ?? 0),
+          totalAmount: roomPrice + taxes,
+          currency: "INR" as const,
+          ratePlanName: String(ratePlan.name ?? "Rate plan"),
+          imageUrl: media?.primaryImage,
+          imageGallery: media?.gallery,
+          bookingSelection: {
+            roomTypeId: Number(room.room_type),
+            ratePlanId,
+            occupancyId,
+            adults: Number(occupancy.adults),
+            children: Number(occupancy.children),
+            totalPrice: String(
+              occupancy.total_price ?? occupancy.total_room_price ?? "0"
+            ),
+            totalTaxesAndFees: String(
+              occupancy.total_taxes_and_fees ?? "0"
+            ),
+            ratePlan: {
+              rate_plan_id: ratePlanId,
+              name: String(ratePlan.name ?? ""),
+              penalty: ratePlan.penalty,
+              ...(ratePlan.secondary_rate_plan_id !== undefined
+                ? { secondary_rate_plan_id: ratePlan.secondary_rate_plan_id }
+                : {}),
+              ...(ratePlan.secondary_season_id !== undefined
+                ? { secondary_season_id: ratePlan.secondary_season_id }
+                : {}),
+              ...(ratePlan.secondary_period_start !== undefined
+                ? { secondary_period_start: ratePlan.secondary_period_start }
+                : {}),
+              ...(ratePlan.combined_plan !== undefined
+                ? { combined_plan: Boolean(ratePlan.combined_plan) }
+                : {}),
+            },
+            occupancy: {
+              id: occupancyId,
+              adults: String(occupancy.adults ?? ""),
+              children: String(occupancy.children ?? ""),
+              ...(occupancy.average_price !== undefined
+                ? { average_price: String(occupancy.average_price) }
+                : {}),
+              ...(occupancy.total_price !== undefined
+                ? { total_price: String(occupancy.total_price) }
+                : {}),
+              ...(occupancy.total_room_price !== undefined
+                ? { total_room_price: String(occupancy.total_room_price) }
+                : {}),
+              total_taxes_and_fees: String(
+                occupancy.total_taxes_and_fees ?? "0"
+              ),
+              prices: occupancy.prices ?? [],
+              addons: occupancy.addons ?? [],
+            },
+          },
+        };
+        })
+    );
   });
 },
 
-  async createBooking(_payload: unknown): Promise<{ bookingId: string }> {
-    throw new Error('Simplotel booking creation not connected yet.');
+  async prepareBooking(input: {
+    request: AvailabilityRequest;
+    selectedRate: LiveStayRate;
+    guest: BookingGuestDetails;
+  }): Promise<BookingPreparationResponse> {
+    const response = await fetch(
+      `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking/prepare`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...input.request,
+          selection: {
+            roomTypeId: input.selectedRate.bookingSelection.roomTypeId,
+            ratePlanId: input.selectedRate.bookingSelection.ratePlanId,
+            occupancyId: input.selectedRate.bookingSelection.occupancyId,
+            totalPrice: input.selectedRate.bookingSelection.totalPrice,
+            totalTaxesAndFees:
+              input.selectedRate.bookingSelection.totalTaxesAndFees,
+          },
+          customerDetail: {
+            ...input.guest,
+            bookingForSelf: true,
+          },
+        }),
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        data?.error?.message ?? "Booking details could not be prepared."
+      );
+    }
+    return data as BookingPreparationResponse;
   },
 
   async manageBooking(_bookingId: string): Promise<unknown> {

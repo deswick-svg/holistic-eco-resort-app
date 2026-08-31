@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:room-media": "node --experimental-strip-types --test lib/simplotel/roomMedia.test.ts"
+    "test:room-media": "node --experimental-strip-types --test lib/simplotel/roomMedia.test.ts",
+    "test:booking-preparation": "node --experimental-strip-types --test lib/simplotel/bookingPreparation.test.ts",
+    "test:booking-safety": "node --experimental-strip-types --test lib/simplotel/bookingSafety.test.ts"
   },
   "dependencies": {
     "next": "16.3.3",
