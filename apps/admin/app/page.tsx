@@ -1,4 +1,3 @@
-import Link from "next/link";
 import AdminSidebar from "../components/AdminSidebar";
 export default function Home() {
   return (

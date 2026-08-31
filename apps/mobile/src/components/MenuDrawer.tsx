@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
   content: { paddingBottom: 30 },
   brand: { height: 125, backgroundColor: colors.forest, justifyContent: 'center', alignItems: 'center' },
   logo: { width: 118, height: 94 },
-  greeting: { paddingHorizontal: 20, paddingTop: 18, fontSize: 30, fontWeight: '750', color: colors.ink },
+  greeting: { paddingHorizontal: 20, paddingTop: 18, fontSize: 30, fontWeight: '700', color: colors.ink },
   authRow: { padding: 16, gap: 10 },
   authButton: { borderWidth: 1, borderColor: colors.ink, paddingVertical: 13, borderRadius: 10, alignItems: 'center' },
   authText: { fontSize: 16, fontWeight: '800', color: colors.ink },

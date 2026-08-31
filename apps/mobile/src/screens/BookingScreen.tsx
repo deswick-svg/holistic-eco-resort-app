@@ -1,11 +1,64 @@
 import React, { useState } from "react";
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { StayCard } from '../components/StayCard';
-import { stays } from '../data/stays';
 import { simplotel, LiveStayRate } from "../services/simplotel";
+
+function RoomGallery({ rate }: { rate: LiveStayRate }) {
+  const [activeImage, setActiveImage] = useState(0);
+  const { width } = useWindowDimensions();
+  const imageWidth = width - 78;
+  const gallery = rate.imageGallery?.length
+    ? rate.imageGallery
+    : rate.imageUrl
+      ? [rate.imageUrl]
+      : [];
+
+  if (gallery.length === 0) return null;
+
+  const handleScrollEnd = (
+    event: NativeSyntheticEvent<NativeScrollEvent>
+  ) => {
+    setActiveImage(
+      Math.round(event.nativeEvent.contentOffset.x / imageWidth)
+    );
+  };
+
+  return (
+    <View style={styles.galleryWrap}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScrollEnd}
+        style={{ width: imageWidth }}
+      >
+        {gallery.map((imageUrl) => (
+          <Image
+            key={imageUrl}
+            source={{ uri: imageUrl }}
+            style={[styles.roomImage, { width: imageWidth }]}
+            resizeMode="cover"
+          />
+        ))}
+      </ScrollView>
+      {gallery.length > 1 ? (
+        <View style={styles.galleryDots}>
+          {gallery.map((imageUrl, index) => (
+            <View
+              key={imageUrl}
+              style={[
+                styles.galleryDot,
+                index === activeImage && styles.galleryDotActive,
+              ]}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 export function BookingScreen({ onBack }: { onBack: () => void }) {
   const [checkIn, setCheckIn] = useState<Date | null>(null);
@@ -171,6 +224,7 @@ if (selectedDate) {
 
     {liveRates.map((rate) => (
       <View key={rate.stayId} style={styles.roomCard}>
+        <RoomGallery rate={rate} />
   <Text style={styles.roomName}>
     {rate.roomName.replace(" at Holistic Eco Resort and Ayurvedic Retreat", "")}
   </Text>
@@ -201,6 +255,30 @@ if (selectedDate) {
 }
 
 const styles = StyleSheet.create({
+  galleryWrap: {
+    marginBottom: 14,
+  },
+  roomImage: {
+    height: 180,
+    borderRadius: 14,
+  },
+  galleryDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 9,
+  },
+  galleryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.line,
+  },
+  galleryDotActive: {
+    width: 18,
+    backgroundColor: colors.forest,
+  },
+
   roomCard: {
   marginTop: 14,
   padding: 18,

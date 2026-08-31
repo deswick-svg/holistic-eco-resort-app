@@ -1,3 +1,7 @@
+import { getRoomMedia } from "../data/roomMedia";
+
+const SIMPLOTEL_API_BASE_URL = "http://192.168.1.100:3000";
+
 export type AvailabilityRequest = {
   checkIn: string;
   checkOut: string;
@@ -14,7 +18,33 @@ export type LiveStayRate = {
   currency: "INR";
   ratePlanName?: string;
   imageUrl?: string;
+  imageGallery?: string[];
 };
+
+type RemoteRoomMedia = {
+  primaryImage: string;
+  gallery: string[];
+};
+
+type RoomMediaResponse = {
+  rooms?: Record<string, RemoteRoomMedia>;
+};
+
+async function getRemoteRoomMedia(): Promise<Record<string, RemoteRoomMedia>> {
+  try {
+    const response = await fetch(
+      `${SIMPLOTEL_API_BASE_URL}/api/simplotel/room-media`
+    );
+
+    if (!response.ok) return {};
+
+    const data = (await response.json()) as RoomMediaResponse;
+    return data.rooms ?? {};
+  } catch (error) {
+    console.warn("Unable to load room media; live rates will continue without it.", error);
+    return {};
+  }
+}
 
 /**
  * Simplotel adapter boundary.
@@ -27,16 +57,16 @@ export const simplotel = {
   async getAvailability(
   request: AvailabilityRequest
 ): Promise<LiveStayRate[]> {
-  const response = await fetch(
-    "http://192.168.1.100:3000/api/simplotel/availability",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-    }
-  );
+  const [response, remoteRoomMedia] = await Promise.all([
+    fetch(`${SIMPLOTEL_API_BASE_URL}/api/simplotel/availability`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      }),
+    getRemoteRoomMedia(),
+  ]);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -51,7 +81,9 @@ export const simplotel = {
     return [];
   }
 
-  return data.rooms.map((room: any) => {    
+  return data.rooms.map((room: any) => {
+    const roomTypeId = String(room.room_type);
+    const media = remoteRoomMedia[roomTypeId] ?? getRoomMedia(roomTypeId);
     const ratePlan = room.rate_plans?.[0];
     const occupancy = ratePlan?.occupancies?.[0];
 
@@ -59,13 +91,15 @@ export const simplotel = {
     const taxes = Number(occupancy?.total_taxes_and_fees ?? 0);
 
     return {
-      stayId: String(room.room_type),
+      stayId: roomTypeId,
       roomName: String(room.name ?? "Room"),
       availableUnits: Number(room.availability ?? 0),
       totalAmount: roomPrice + taxes,
       currency: "INR" as const,
       ratePlanName: ratePlan?.name,
-          };
+      imageUrl: media?.primaryImage,
+      imageGallery: media?.gallery,
+    };
   });
 },
 
