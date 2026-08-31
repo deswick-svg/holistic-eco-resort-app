@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import {
-  BOOKING_CREATION_ENABLED,
   BookingPreparationError,
   prepareBookingCore,
   validateBookingPreparationRequest,
   type SimplotelAvailabilityResponse,
 } from "../../../../../lib/simplotel/bookingPreparation";
+import { isBookingCreationEnabled } from "../../../../../lib/simplotel/bookingExecution";
 
 const SIMPLOTEL_HOTEL_ID = 7849;
 const SIMPLOTEL_ACCESS_TOKEN = process.env.SIMPLOTEL_ACCESS_TOKEN;
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     // never calls Simplotel /book and cannot create a reservation.
     return NextResponse.json({
       status: "PREPARED_NOT_BOOKED",
-      bookingCreationEnabled: BOOKING_CREATION_ENABLED,
+      bookingCreationEnabled: isBookingCreationEnabled(),
       summary: prepared.summary,
       preservedBookingData: {
         lineItemCount: prepared.payload.lineItems.length,
@@ -89,11 +89,11 @@ export async function POST(request: Request) {
           (item) => item.room.rate_plan.penalty !== undefined
         ),
       },
-      unresolvedBeforeBooking: [
-        "payment_behavior",
-        "hold_inventory_policy",
-        "idempotency_or_duplicate_booking_protection",
-      ],
+      bookingBehavior: {
+        advanceAmount: 0,
+        holdInventory: { enabled: true, value: 24, unit: "HOURS" },
+        paymentStatus: "NOT_DETERMINED_BY_BOOK_RESPONSE",
+      },
     });
   } catch (error) {
     if (error instanceof BookingPreparationError) {

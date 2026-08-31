@@ -69,7 +69,7 @@ export type BookingGuestDetails = {
 
 export type BookingPreparationResponse = {
   status: "PREPARED_NOT_BOOKED";
-  bookingCreationEnabled: false;
+  bookingCreationEnabled: boolean;
   summary: {
     checkIn: string;
     checkOut: string;
@@ -94,8 +94,40 @@ export type BookingPreparationResponse = {
     hasDailyPrices: boolean;
     hasPenalty: boolean;
   };
-  unresolvedBeforeBooking: string[];
+  bookingBehavior: {
+    advanceAmount: 0;
+    holdInventory: { enabled: true; value: 24; unit: "HOURS" };
+    paymentStatus: "NOT_DETERMINED_BY_BOOK_RESPONSE";
+  };
 };
+
+export type BookingConfirmationResponse = {
+  status: "BOOKED";
+  booking_id: string;
+  quote_id: string;
+  paymentStatus: "NOT_CONFIRMED";
+};
+
+function bookingRequestBody(input: {
+  request: AvailabilityRequest;
+  selectedRate: LiveStayRate;
+  guest: BookingGuestDetails;
+}) {
+  return {
+    ...input.request,
+    selection: {
+      roomTypeId: input.selectedRate.bookingSelection.roomTypeId,
+      ratePlanId: input.selectedRate.bookingSelection.ratePlanId,
+      occupancyId: input.selectedRate.bookingSelection.occupancyId,
+      totalPrice: input.selectedRate.bookingSelection.totalPrice,
+      totalTaxesAndFees:
+        input.selectedRate.bookingSelection.totalTaxesAndFees,
+      ratePlan: input.selectedRate.bookingSelection.ratePlan,
+      occupancy: input.selectedRate.bookingSelection.occupancy,
+    },
+    customerDetail: { ...input.guest, bookingForSelf: true },
+  };
+}
 
 type RemoteRoomMedia = {
   primaryImage: string;
@@ -250,21 +282,7 @@ export const simplotel = {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...input.request,
-          selection: {
-            roomTypeId: input.selectedRate.bookingSelection.roomTypeId,
-            ratePlanId: input.selectedRate.bookingSelection.ratePlanId,
-            occupancyId: input.selectedRate.bookingSelection.occupancyId,
-            totalPrice: input.selectedRate.bookingSelection.totalPrice,
-            totalTaxesAndFees:
-              input.selectedRate.bookingSelection.totalTaxesAndFees,
-          },
-          customerDetail: {
-            ...input.guest,
-            bookingForSelf: true,
-          },
-        }),
+        body: JSON.stringify(bookingRequestBody(input)),
       }
     );
 
@@ -275,6 +293,33 @@ export const simplotel = {
       );
     }
     return data as BookingPreparationResponse;
+  },
+
+  async createBooking(input: {
+    request: AvailabilityRequest;
+    selectedRate: LiveStayRate;
+    guest: BookingGuestDetails;
+    submissionId: string;
+  }): Promise<BookingConfirmationResponse> {
+    const response = await fetch(
+      `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...bookingRequestBody(input),
+          submissionId: input.submissionId,
+        }),
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error?.message ?? "Booking could not be completed.");
+    }
+    if (!data?.booking_id || !data?.quote_id) {
+      throw new Error("Booking response did not contain confirmation identifiers.");
+    }
+    return data as BookingConfirmationResponse;
   },
 
   async manageBooking(_bookingId: string): Promise<unknown> {

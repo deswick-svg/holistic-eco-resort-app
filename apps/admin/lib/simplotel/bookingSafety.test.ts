@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 const adminRoot = resolve(process.cwd());
 const repositoryRoot = resolve(adminRoot, "..", "..");
-const forbiddenUpstreamPath = ["voice-bot", "book"].join("/");
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -16,19 +15,40 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-test("repository contains no Simplotel POST /book target", () => {
-  const offenders = sourceFiles(repositoryRoot).filter((path) =>
-    readFileSync(path, "utf8").includes(forbiddenUpstreamPath)
-  );
+test("mobile source contains no Simplotel token or direct upstream target", () => {
+  const mobileRoot = join(repositoryRoot, "apps", "mobile");
+  const offenders = sourceFiles(mobileRoot).filter((path) => {
+    const source = readFileSync(path, "utf8");
+    return (
+      source.includes("SIMPLOTEL_ACCESS_TOKEN") ||
+      source.includes("admin.simplotel.com") ||
+      source.includes("SIMPLOTEL_BOOKING_ENABLED")
+    );
+  });
   assert.deepEqual(offenders, []);
-
-  assert.equal(
-    existsSync(join(adminRoot, "app", "api", "simplotel", "book", "route.ts")),
-    false
-  );
 });
 
-test("mobile final booking action is explicitly disabled and has no handler", () => {
+test("server booking route checks the safety flag before upstream work", () => {
+  const routePath = join(
+    adminRoot,
+    "app",
+    "api",
+    "simplotel",
+    "booking",
+    "route.ts"
+  );
+  const source = readFileSync(routePath, "utf8");
+  const guardIndex = source.indexOf(
+    "requireBookingCreationEnabled(isBookingCreationEnabled())"
+  );
+  const availabilityIndex = source.indexOf("voice-bot/availability");
+  const bookIndex = source.indexOf('endpoint: "book"');
+  assert.ok(guardIndex >= 0);
+  assert.ok(guardIndex < availabilityIndex);
+  assert.ok(guardIndex < bookIndex);
+});
+
+test("mobile final action remains disabled when server capability is false", () => {
   const bookingScreenPath = join(
     repositoryRoot,
     "apps",
@@ -43,7 +63,10 @@ test("mobile final booking action is explicitly disabled and has no handler", ()
   )?.[0];
 
   assert.ok(finalAction, "Final booking action was not found.");
-  assert.match(finalAction, /disabled=\{true\}/);
-  assert.doesNotMatch(finalAction, /onPress=/);
+  assert.match(
+    finalAction,
+    /disabled=\{!preparation\.bookingCreationEnabled \|\| submitting\}/
+  );
+  assert.match(finalAction, /onPress=\{handleCreateBooking\}/);
   assert.match(finalAction, /Booking not yet enabled/);
 });

@@ -53,6 +53,8 @@ export type BookingPreparationRequest = {
     occupancyId: string;
     totalPrice: string;
     totalTaxesAndFees: string;
+    ratePlan: Omit<SimplotelRatePlan, "occupancies">;
+    occupancy: SimplotelOccupancy;
   };
   customerDetail: {
     name: string;
@@ -92,11 +94,31 @@ export type PreparedBookingCore = {
     checkInDate: string;
     checkOutDate: string;
     customerDetail: BookingPreparationRequest["customerDetail"];
+    guestDetail: null;
+    guestCategory: "INDIVIDUAL";
+    city: "";
+    state: "";
+    country: "";
+    gstNumber: "";
+    discount: null;
   };
   lineItems: PreparedLineItem[];
 };
 
-export const BOOKING_CREATION_ENABLED = false as const;
+export type SimplotelBookingPayload = PreparedBookingCore & {
+  advanceAmount: 0;
+  holdInventory: {
+    enabled: true;
+    value: 24;
+    unit: "HOURS";
+  };
+};
+
+export type SimplotelInvoicePayload = PreparedBookingCore & {
+  advanceAmount: number;
+  advancePercentage: 0 | 100;
+  holdInventory: SimplotelBookingPayload["holdInventory"];
+};
 
 export class BookingPreparationError extends Error {
   readonly code:
@@ -141,6 +163,36 @@ function requireInteger(
     );
   }
   return Number(value);
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return (
+    typeof value === "object" &&
+    Object.values(value as Record<string, unknown>).every(isJsonValue)
+  );
+}
+
+function stableJson(value: JsonValue): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${stableJson(
+            (value as Record<string, JsonValue>)[key] as JsonValue
+          )}`
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function validateBookingPreparationRequest(
@@ -203,6 +255,22 @@ export function validateBookingPreparationRequest(
     );
   }
 
+  const selectedRatePlan = selection.ratePlan;
+  const selectedOccupancy = selection.occupancy;
+  if (
+    !selectedRatePlan ||
+    typeof selectedRatePlan !== "object" ||
+    !selectedOccupancy ||
+    typeof selectedOccupancy !== "object" ||
+    !isJsonValue(selectedRatePlan) ||
+    !isJsonValue(selectedOccupancy)
+  ) {
+    throw new BookingPreparationError(
+      "The complete selected rate plan and occupancy are required.",
+      "INVALID_REQUEST"
+    );
+  }
+
   const customer = body.customerDetail as Record<string, unknown> | undefined;
   const name = String(customer?.name ?? "").trim();
   const email = String(customer?.email ?? "").trim();
@@ -234,6 +302,8 @@ export function validateBookingPreparationRequest(
       occupancyId,
       totalPrice,
       totalTaxesAndFees,
+      ratePlan: selectedRatePlan as Omit<SimplotelRatePlan, "occupancies">,
+      occupancy: selectedOccupancy as SimplotelOccupancy,
     },
     customerDetail: { name, email, phone, bookingForSelf: true },
   };
@@ -308,6 +378,52 @@ export function prepareBookingCore(
       "SELECTION_CHANGED"
     );
   }
+
+  const selectedRatePlanSnapshot: JsonValue = request.selection.ratePlan;
+  const freshRatePlanSnapshot: JsonValue = {
+    rate_plan_id: ratePlan.rate_plan_id,
+    name: ratePlan.name,
+    penalty: ratePlan.penalty,
+    ...(ratePlan.secondary_rate_plan_id !== undefined
+      ? { secondary_rate_plan_id: ratePlan.secondary_rate_plan_id }
+      : {}),
+    ...(ratePlan.secondary_season_id !== undefined
+      ? { secondary_season_id: ratePlan.secondary_season_id }
+      : {}),
+    ...(ratePlan.secondary_period_start !== undefined
+      ? { secondary_period_start: ratePlan.secondary_period_start }
+      : {}),
+    ...(ratePlan.combined_plan !== undefined
+      ? { combined_plan: ratePlan.combined_plan }
+      : {}),
+  };
+  const selectedOccupancySnapshot: JsonValue = request.selection.occupancy;
+  const freshOccupancySnapshot: JsonValue = {
+    id: occupancy.id,
+    adults: occupancy.adults,
+    children: occupancy.children,
+    ...(occupancy.average_price !== undefined
+      ? { average_price: occupancy.average_price }
+      : {}),
+    ...(occupancy.total_price !== undefined
+      ? { total_price: occupancy.total_price }
+      : {}),
+    ...(occupancy.total_room_price !== undefined
+      ? { total_room_price: occupancy.total_room_price }
+      : {}),
+    total_taxes_and_fees: occupancy.total_taxes_and_fees,
+    prices: occupancy.prices,
+    addons: occupancy.addons,
+  };
+  if (
+    stableJson(selectedRatePlanSnapshot) !== stableJson(freshRatePlanSnapshot) ||
+    stableJson(selectedOccupancySnapshot) !== stableJson(freshOccupancySnapshot)
+  ) {
+    throw new BookingPreparationError(
+      "The selected rate plan, daily prices, taxes, or occupancy changed. Review live availability again.",
+      "SELECTION_CHANGED"
+    );
+  }
   const ratePlanForBooking: PreparedLineItem["room"]["rate_plan"] = {
     rate_plan_id: ratePlan.rate_plan_id,
     name: ratePlan.name,
@@ -347,6 +463,13 @@ export function prepareBookingCore(
       checkInDate: request.checkIn,
       checkOutDate: request.checkOut,
       customerDetail: request.customerDetail,
+      guestDetail: null,
+      guestCategory: "INDIVIDUAL",
+      city: "",
+      state: "",
+      country: "",
+      gstNumber: "",
+      discount: null,
     },
     lineItems,
   };
@@ -374,5 +497,40 @@ export function prepareBookingCore(
       penalty: ratePlan.penalty,
       customerDetail: { ...request.customerDetail },
     },
+  };
+}
+
+export function buildSimplotelBookingPayload(
+  core: PreparedBookingCore
+): SimplotelBookingPayload {
+  return {
+    ...structuredClone(core),
+    advanceAmount: 0,
+    holdInventory: { enabled: true, value: 24, unit: "HOURS" },
+  };
+}
+
+export function buildSimplotelInvoicePayload(
+  core: PreparedBookingCore,
+  advanceAmount: number,
+  advancePercentage: 0 | 100
+): SimplotelInvoicePayload {
+  if (
+    !Number.isFinite(advanceAmount) ||
+    advanceAmount < 0 ||
+    (advanceAmount === 0 && advancePercentage !== 0) ||
+    (advanceAmount > 0 && advancePercentage !== 100)
+  ) {
+    throw new BookingPreparationError(
+      "Invoice payment values must match a documented Simplotel flow.",
+      "INVALID_REQUEST"
+    );
+  }
+
+  return {
+    ...structuredClone(core),
+    advanceAmount,
+    advancePercentage,
+    holdInventory: { enabled: true, value: 24, unit: "HOURS" },
   };
 }

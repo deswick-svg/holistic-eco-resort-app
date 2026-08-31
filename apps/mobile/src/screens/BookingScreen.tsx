@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
@@ -7,12 +7,13 @@ import {
   simplotel,
   AvailabilityRequest,
   BookingGuestDetails,
+  BookingConfirmationResponse,
   BookingPreparationResponse,
   JsonValue,
   LiveStayRate,
 } from "../services/simplotel";
 
-type BookingStep = "search" | "guest" | "summary" | "prepared";
+type BookingStep = "search" | "guest" | "summary" | "prepared" | "confirmation";
 
 function formatDisplayApiDate(date: string) {
   const [year, month, day] = date.split("-");
@@ -129,8 +130,12 @@ export function BookingScreen({ onBack }: { onBack: () => void }) {
     phone: "+91",
   });
   const [preparing, setPreparing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [flowError, setFlowError] = useState("");
   const [preparation, setPreparation] = useState<BookingPreparationResponse | null>(null);
+  const [confirmation, setConfirmation] = useState<BookingConfirmationResponse | null>(null);
+  const submissionLock = useRef(false);
+  const submissionId = useRef<string | null>(null);
   const formatDate = (date: Date | null) => {
   if (!date) return "DD-MM-YYYY";
 
@@ -217,6 +222,9 @@ const formatApiDate = (date: Date) => {
     setSelectedRate(rate);
     setFlowError("");
     setPreparation(null);
+    setConfirmation(null);
+    submissionId.current = null;
+    submissionLock.current = false;
     setStep("guest");
   };
 
@@ -264,6 +272,40 @@ const formatApiDate = (date: Date) => {
     }
   };
 
+  const handleCreateBooking = async () => {
+    if (
+      submissionLock.current ||
+      !preparation?.bookingCreationEnabled ||
+      !searchRequest ||
+      !selectedRate
+    ) return;
+
+    submissionLock.current = true;
+    setSubmitting(true);
+    setFlowError("");
+    submissionId.current ??=
+      `mobile_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    try {
+      const result = await simplotel.createBooking({
+        request: searchRequest,
+        selectedRate,
+        guest,
+        submissionId: submissionId.current,
+      });
+      setConfirmation(result);
+      setStep("confirmation");
+    } catch (bookingError) {
+      setFlowError(
+        bookingError instanceof Error
+          ? bookingError.message
+          : "Booking could not be completed."
+      );
+    } finally {
+      submissionLock.current = false;
+      setSubmitting(false);
+    }
+  };
+
   if (step !== "search" && selectedRate && searchRequest) {
     const review = preparation?.summary;
     const displayRoomName = (review?.roomName ?? selectedRate.roomName).replace(
@@ -292,6 +334,7 @@ const formatApiDate = (date: Date) => {
               setFlowError("");
               if (step === "guest") setStep("search");
               else if (step === "summary") setStep("guest");
+              else if (step === "confirmation") setStep("prepared");
               else setStep("summary");
             }}
             style={styles.back}
@@ -303,7 +346,9 @@ const formatApiDate = (date: Date) => {
               ? "Guest details"
               : step === "summary"
                 ? "Booking summary"
-                : "Final review"}
+                : step === "confirmation"
+                  ? "Booking confirmation"
+                  : "Final review"}
           </Text>
           <View style={{ width: 40 }} />
         </View>
@@ -392,7 +437,20 @@ const formatApiDate = (date: Date) => {
                 </Text>
               </View>
 
-              {step === "summary" ? (
+              {step === "confirmation" && confirmation ? (
+                <View style={styles.preparedCard}>
+                  <Ionicons name="checkmark-circle" size={50} color={colors.leaf} />
+                  <Text style={styles.preparedTitle}>Booking confirmed</Text>
+                  <Text style={styles.preparedText}>
+                    Simplotel created the booking and returned the documented confirmation identifiers.
+                  </Text>
+                  <SummaryRow label="Booking ID" value={confirmation.booking_id} strong />
+                  <SummaryRow label="Quote ID" value={confirmation.quote_id} />
+                  <Text style={styles.notBookedText}>
+                    Payment is not confirmed by this booking response.
+                  </Text>
+                </View>
+              ) : step === "summary" ? (
                 <>
                   <View style={styles.warningNotice}>
                     <Text style={styles.warningText}>
@@ -427,16 +485,35 @@ const formatApiDate = (date: Date) => {
                   </View>
                   <Pressable
                     testID="booking-final-action"
-                    style={[styles.button, styles.finalActionDisabled]}
-                    disabled={true}
+                    style={[
+                      styles.button,
+                      (!preparation.bookingCreationEnabled || submitting) &&
+                        styles.finalActionDisabled,
+                    ]}
+                    disabled={!preparation.bookingCreationEnabled || submitting}
+                    onPress={handleCreateBooking}
                     accessibilityRole="button"
-                    accessibilityState={{ disabled: true }}
+                    accessibilityState={{
+                      disabled: !preparation.bookingCreationEnabled || submitting,
+                    }}
                   >
-                    <Ionicons name="lock-closed" size={17} color={colors.white} />
-                    <Text style={styles.buttonText}>Booking not yet enabled</Text>
+                    <Ionicons
+                      name={preparation.bookingCreationEnabled ? "checkmark" : "lock-closed"}
+                      size={17}
+                      color={colors.white}
+                    />
+                    <Text style={styles.buttonText}>
+                      {submitting
+                        ? "Creating booking..."
+                        : preparation.bookingCreationEnabled
+                          ? "Confirm booking"
+                          : "Booking not yet enabled"}
+                    </Text>
                   </Pressable>
                   <Text style={styles.finalActionNote}>
-                    This control will remain disabled until payment, inventory-hold, and duplicate-booking behavior are confirmed.
+                    {preparation.bookingCreationEnabled
+                      ? "Availability and price will be checked again before the booking is submitted."
+                      : "Booking creation is disabled by the server safety setting."}
                   </Text>
                 </>
               ) : null}
