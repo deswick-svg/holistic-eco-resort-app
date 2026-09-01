@@ -10,6 +10,7 @@ import { GalleryScreen } from './src/screens/GalleryScreen';
 import { ContactScreen } from './src/screens/ContactScreen';
 import { LocalAttractionsScreen } from './src/screens/LocalAttractionsScreen';
 import { PropertyMapScreen } from './src/screens/PropertyMapScreen';
+import { ReviewScreen } from './src/screens/ReviewScreen';
 import { PlaceholderScreen } from './src/screens/PlaceholderScreen';
 import { MenuDrawer } from './src/components/MenuDrawer';
 import { colors } from './src/theme/colors';
@@ -44,6 +45,8 @@ export default function App() {
         <LocalAttractionsScreen onBack={() => setScreen('home')} />
       ) : screen === 'map' ? (
         <PropertyMapScreen onBack={() => setScreen('home')} />
+      ) : screen === 'reviews' ? (
+        <ReviewScreen onBack={() => setScreen('home')} />
       ) : (
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}
