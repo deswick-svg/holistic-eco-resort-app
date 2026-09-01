@@ -7,6 +7,7 @@ import { DiningScreen } from './src/screens/DiningScreen';
 import { ActivitiesScreen } from './src/screens/ActivitiesScreen';
 import { SpaScreen } from './src/screens/SpaScreen';
 import { GalleryScreen } from './src/screens/GalleryScreen';
+import { ContactScreen } from './src/screens/ContactScreen';
 import { PlaceholderScreen } from './src/screens/PlaceholderScreen';
 import { MenuDrawer } from './src/components/MenuDrawer';
 import { colors } from './src/theme/colors';
@@ -35,6 +36,8 @@ export default function App() {
         <SpaScreen onBack={() => setScreen('home')} />
       ) : screen === 'gallery' ? (
         <GalleryScreen onBack={() => setScreen('home')} />
+      ) : screen === 'contact' ? (
+        <ContactScreen onBack={() => setScreen('home')} />
       ) : (
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}
