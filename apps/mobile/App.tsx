@@ -12,6 +12,7 @@ import { LocalAttractionsScreen } from './src/screens/LocalAttractionsScreen';
 import { PropertyMapScreen } from './src/screens/PropertyMapScreen';
 import { ReviewScreen } from './src/screens/ReviewScreen';
 import { CouponScreen } from './src/screens/CouponScreen';
+import { BookingHistoryScreen } from './src/screens/BookingHistoryScreen';
 import { PlaceholderScreen } from './src/screens/PlaceholderScreen';
 import { MenuDrawer } from './src/components/MenuDrawer';
 import { colors } from './src/theme/colors';
@@ -50,6 +51,8 @@ export default function App() {
         <ReviewScreen onBack={() => setScreen('home')} />
       ) : screen === 'coupon' ? (
         <CouponScreen onBack={() => setScreen('home')} />
+      ) : screen === 'history' ? (
+        <BookingHistoryScreen onBack={() => setScreen('home')} />
       ) : (
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}
