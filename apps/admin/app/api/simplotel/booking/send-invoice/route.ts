@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   BookingPreparationError,
-  buildSimplotelInvoicePayload,
+  buildFullOnlineInvoicePayload,
   prepareBookingCore,
   validateBookingPreparationRequest,
   type SimplotelAvailabilityResponse,
@@ -9,7 +9,7 @@ import {
 import {
   BookingExecutionError,
   bookingSubmissionRegistry,
-  isBookingCreationEnabled,
+  isFullOnlinePaymentEnabled,
   postToSimplotel,
   requireBookingCreationEnabled,
 } from "../../../../../lib/simplotel/bookingExecution";
@@ -18,7 +18,7 @@ const SIMPLOTEL_HOTEL_ID = 7849;
 
 export async function POST(request: Request) {
   try {
-    requireBookingCreationEnabled(isBookingCreationEnabled());
+    requireBookingCreationEnabled(isFullOnlinePaymentEnabled());
 
     const accessToken = process.env.SIMPLOTEL_ACCESS_TOKEN;
     if (!accessToken) {
@@ -30,24 +30,10 @@ export async function POST(request: Request) {
 
     const rawBody = (await request.json()) as Record<string, unknown>;
     const submissionId = String(rawBody.submissionId ?? "");
-    const advanceAmount = Number(rawBody.advanceAmount);
-    const advancePercentage = Number(rawBody.advancePercentage);
-    if (
-      !Number.isFinite(advanceAmount) ||
-      advanceAmount < 0 ||
-      (advanceAmount === 0 && advancePercentage !== 0) ||
-      (advanceAmount > 0 && advancePercentage !== 100)
-    ) {
-      throw new BookingPreparationError(
-        "Invoice payment values must match a documented Simplotel flow.",
-        "INVALID_REQUEST"
-      );
-    }
-    const documentedAdvancePercentage = advancePercentage as 0 | 100;
     const bookingRequest = validateBookingPreparationRequest(rawBody);
 
     const confirmation = await bookingSubmissionRegistry.run(
-      `invoice_${submissionId}`,
+      `payment_${submissionId}`,
       async () => {
         const rooms = Array.from({ length: bookingRequest.rooms }, (_, index) => ({
           id: index + 1,
@@ -90,19 +76,15 @@ export async function POST(request: Request) {
           endpoint: "send-invoice",
           hotelId: SIMPLOTEL_HOTEL_ID,
           accessToken,
-          payload: buildSimplotelInvoicePayload(
-            prepared.payload,
-            advanceAmount,
-            documentedAdvancePercentage
-          ),
+          payload: buildFullOnlineInvoicePayload(prepared.payload),
         });
       }
     );
 
     return NextResponse.json({
-      status: "INVOICE_REQUEST_ACCEPTED",
+      status: "PAYMENT_LINK_CREATED",
       ...confirmation,
-      paymentStatus: "NOT_CONFIRMED",
+      paymentStatus: "PAYMENT_PENDING",
     });
   } catch (error) {
     if (error instanceof BookingPreparationError) {

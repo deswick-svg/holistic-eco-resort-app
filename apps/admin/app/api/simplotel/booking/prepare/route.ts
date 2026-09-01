@@ -5,7 +5,7 @@ import {
   validateBookingPreparationRequest,
   type SimplotelAvailabilityResponse,
 } from "../../../../../lib/simplotel/bookingPreparation";
-import { isBookingCreationEnabled } from "../../../../../lib/simplotel/bookingExecution";
+import { isFullOnlinePaymentEnabled } from "../../../../../lib/simplotel/bookingExecution";
 
 const SIMPLOTEL_HOTEL_ID = 7849;
 const SIMPLOTEL_ACCESS_TOKEN = process.env.SIMPLOTEL_ACCESS_TOKEN;
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     // never calls Simplotel /book and cannot create a reservation.
     return NextResponse.json({
       status: "PREPARED_NOT_BOOKED",
-      bookingCreationEnabled: isBookingCreationEnabled(),
+      paymentCreationEnabled: isFullOnlinePaymentEnabled(),
       summary: prepared.summary,
       preservedBookingData: {
         lineItemCount: prepared.payload.lineItems.length,
@@ -89,10 +89,12 @@ export async function POST(request: Request) {
           (item) => item.room.rate_plan.penalty !== undefined
         ),
       },
-      bookingBehavior: {
-        advanceAmount: 0,
+      paymentBehavior: {
+        method: "PAY_FULL_ONLINE",
+        advanceAmount: prepared.summary.totalAmount,
+        advancePercentage: 100,
         holdInventory: { enabled: true, value: 24, unit: "HOURS" },
-        paymentStatus: "NOT_DETERMINED_BY_BOOK_RESPONSE",
+        paymentStatus: "NOT_STARTED",
       },
     });
   } catch (error) {

@@ -28,7 +28,7 @@ test("mobile source contains no Simplotel token or direct upstream target", () =
   assert.deepEqual(offenders, []);
 });
 
-test("server booking route checks the safety flag before upstream work", () => {
+test("direct booking remains isolated behind its own disabled flag", () => {
   const routePath = join(
     adminRoot,
     "app",
@@ -39,13 +39,41 @@ test("server booking route checks the safety flag before upstream work", () => {
   );
   const source = readFileSync(routePath, "utf8");
   const guardIndex = source.indexOf(
-    "requireBookingCreationEnabled(isBookingCreationEnabled())"
+    "requireBookingCreationEnabled(isDirectBookingEnabled())"
   );
   const availabilityIndex = source.indexOf("voice-bot/availability");
   const bookIndex = source.indexOf('endpoint: "book"');
   assert.ok(guardIndex >= 0);
   assert.ok(guardIndex < availabilityIndex);
   assert.ok(guardIndex < bookIndex);
+});
+
+test("full-online flow calls send-invoice and never book", () => {
+  const invoiceRoute = readFileSync(
+    join(
+      adminRoot,
+      "app",
+      "api",
+      "simplotel",
+      "booking",
+      "send-invoice",
+      "route.ts"
+    ),
+    "utf8"
+  );
+  const mobileService = readFileSync(
+    join(repositoryRoot, "apps", "mobile", "src", "services", "simplotel.ts"),
+    "utf8"
+  );
+  const guardIndex = invoiceRoute.indexOf(
+    "requireBookingCreationEnabled(isFullOnlinePaymentEnabled())"
+  );
+  assert.ok(guardIndex >= 0);
+  assert.ok(guardIndex < invoiceRoute.indexOf("voice-bot/availability"));
+  assert.ok(guardIndex < invoiceRoute.indexOf('endpoint: "send-invoice"'));
+  assert.doesNotMatch(invoiceRoute, /endpoint: "book"/);
+  assert.match(mobileService, /api\/simplotel\/booking\/send-invoice/);
+  assert.doesNotMatch(mobileService, /api\/simplotel\/booking[`"']/);
 });
 
 test("mobile final action remains disabled when server capability is false", () => {
@@ -65,8 +93,8 @@ test("mobile final action remains disabled when server capability is false", () 
   assert.ok(finalAction, "Final booking action was not found.");
   assert.match(
     finalAction,
-    /disabled=\{!preparation\.bookingCreationEnabled \|\| submitting\}/
+    /disabled=\{!preparation\.paymentCreationEnabled \|\| submitting\}/
   );
-  assert.match(finalAction, /onPress=\{handleCreateBooking\}/);
-  assert.match(finalAction, /Booking not yet enabled/);
+  assert.match(finalAction, /onPress=\{handleCreatePaymentLink\}/);
+  assert.match(finalAction, /Payment not yet enabled/);
 });

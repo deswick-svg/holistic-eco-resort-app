@@ -53,6 +53,7 @@ export type BookingPreparationRequest = {
     occupancyId: string;
     totalPrice: string;
     totalTaxesAndFees: string;
+    totalAmount: number;
     ratePlan: Omit<SimplotelRatePlan, "occupancies">;
     occupancy: SimplotelOccupancy;
   };
@@ -116,7 +117,7 @@ export type SimplotelBookingPayload = PreparedBookingCore & {
 
 export type SimplotelInvoicePayload = PreparedBookingCore & {
   advanceAmount: number;
-  advancePercentage: 0 | 100;
+  advancePercentage: 100;
   holdInventory: SimplotelBookingPayload["holdInventory"];
 };
 
@@ -244,10 +245,13 @@ export function validateBookingPreparationRequest(
   const occupancyId = String(selection.occupancyId ?? "").trim();
   const totalPrice = String(selection.totalPrice ?? "").trim();
   const totalTaxesAndFees = String(selection.totalTaxesAndFees ?? "").trim();
+  const totalAmount = Number(selection.totalAmount);
   if (
     !occupancyId ||
     !Number.isFinite(Number(totalPrice)) ||
-    !Number.isFinite(Number(totalTaxesAndFees))
+    !Number.isFinite(Number(totalTaxesAndFees)) ||
+    !Number.isFinite(totalAmount) ||
+    totalAmount < 0
   ) {
     throw new BookingPreparationError(
       "Complete occupancy and price selection is required.",
@@ -302,6 +306,7 @@ export function validateBookingPreparationRequest(
       occupancyId,
       totalPrice,
       totalTaxesAndFees,
+      totalAmount,
       ratePlan: selectedRatePlan as Omit<SimplotelRatePlan, "occupancies">,
       occupancy: selectedOccupancy as SimplotelOccupancy,
     },
@@ -371,7 +376,9 @@ export function prepareBookingCore(
   if (
     Number(totalPrice) !== Number(request.selection.totalPrice) ||
     Number(occupancy.total_taxes_and_fees) !==
-      Number(request.selection.totalTaxesAndFees)
+      Number(request.selection.totalTaxesAndFees) ||
+    (Number(totalPrice) + Number(occupancy.total_taxes_and_fees)) *
+      request.rooms !== request.selection.totalAmount
   ) {
     throw new BookingPreparationError(
       "The selected price or taxes changed. Review live availability again.",
@@ -510,27 +517,27 @@ export function buildSimplotelBookingPayload(
   };
 }
 
-export function buildSimplotelInvoicePayload(
-  core: PreparedBookingCore,
-  advanceAmount: number,
-  advancePercentage: 0 | 100
+export function buildFullOnlineInvoicePayload(
+  core: PreparedBookingCore
 ): SimplotelInvoicePayload {
-  if (
-    !Number.isFinite(advanceAmount) ||
-    advanceAmount < 0 ||
-    (advanceAmount === 0 && advancePercentage !== 0) ||
-    (advanceAmount > 0 && advancePercentage !== 100)
-  ) {
+  const advanceAmount = core.lineItems.reduce(
+    (total, item) =>
+      total +
+      Number(item.room.rate_plan.total_price) +
+      Number(item.room.rate_plan.total_taxes_and_fees),
+    0
+  );
+  if (!Number.isFinite(advanceAmount) || advanceAmount <= 0) {
     throw new BookingPreparationError(
-      "Invoice payment values must match a documented Simplotel flow.",
-      "INVALID_REQUEST"
+      "The validated full payment amount is invalid.",
+      "INVALID_AVAILABILITY_RESPONSE"
     );
   }
 
   return {
     ...structuredClone(core),
     advanceAmount,
-    advancePercentage,
+    advancePercentage: 100,
     holdInventory: { enabled: true, value: 24, unit: "HOURS" },
   };
 }

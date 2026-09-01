@@ -69,7 +69,7 @@ export type BookingGuestDetails = {
 
 export type BookingPreparationResponse = {
   status: "PREPARED_NOT_BOOKED";
-  bookingCreationEnabled: boolean;
+  paymentCreationEnabled: boolean;
   summary: {
     checkIn: string;
     checkOut: string;
@@ -94,18 +94,21 @@ export type BookingPreparationResponse = {
     hasDailyPrices: boolean;
     hasPenalty: boolean;
   };
-  bookingBehavior: {
-    advanceAmount: 0;
+  paymentBehavior: {
+    method: "PAY_FULL_ONLINE";
+    advanceAmount: number;
+    advancePercentage: 100;
     holdInventory: { enabled: true; value: 24; unit: "HOURS" };
-    paymentStatus: "NOT_DETERMINED_BY_BOOK_RESPONSE";
+    paymentStatus: "NOT_STARTED";
   };
 };
 
-export type BookingConfirmationResponse = {
-  status: "BOOKED";
+export type PaymentLinkResponse = {
+  status: "PAYMENT_LINK_CREATED";
   booking_id: string;
   quote_id: string;
-  paymentStatus: "NOT_CONFIRMED";
+  invoice_id: number;
+  paymentStatus: "PAYMENT_PENDING";
 };
 
 function bookingRequestBody(input: {
@@ -122,6 +125,7 @@ function bookingRequestBody(input: {
       totalPrice: input.selectedRate.bookingSelection.totalPrice,
       totalTaxesAndFees:
         input.selectedRate.bookingSelection.totalTaxesAndFees,
+      totalAmount: input.selectedRate.totalAmount * input.request.rooms,
       ratePlan: input.selectedRate.bookingSelection.ratePlan,
       occupancy: input.selectedRate.bookingSelection.occupancy,
     },
@@ -295,14 +299,14 @@ export const simplotel = {
     return data as BookingPreparationResponse;
   },
 
-  async createBooking(input: {
+  async createFullOnlinePayment(input: {
     request: AvailabilityRequest;
     selectedRate: LiveStayRate;
     guest: BookingGuestDetails;
     submissionId: string;
-  }): Promise<BookingConfirmationResponse> {
+  }): Promise<PaymentLinkResponse> {
     const response = await fetch(
-      `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking`,
+      `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking/send-invoice`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -314,12 +318,12 @@ export const simplotel = {
     );
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data?.error?.message ?? "Booking could not be completed.");
+      throw new Error(data?.error?.message ?? "Payment link could not be created.");
     }
-    if (!data?.booking_id || !data?.quote_id) {
-      throw new Error("Booking response did not contain confirmation identifiers.");
+    if (!data?.booking_id || !data?.quote_id || !Number.isInteger(data?.invoice_id)) {
+      throw new Error("Invoice response did not contain the required identifiers.");
     }
-    return data as BookingConfirmationResponse;
+    return data as PaymentLinkResponse;
   },
 
   async manageBooking(_bookingId: string): Promise<unknown> {

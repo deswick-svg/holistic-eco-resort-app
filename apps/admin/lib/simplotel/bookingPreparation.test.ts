@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   BookingPreparationError,
   buildSimplotelBookingPayload,
-  buildSimplotelInvoicePayload,
+  buildFullOnlineInvoicePayload,
   prepareBookingCore,
   validateBookingPreparationRequest,
   type BookingPreparationRequest,
@@ -23,6 +23,7 @@ const request: BookingPreparationRequest = {
     occupancyId: "103939__11976__2__1",
     totalPrice: "640",
     totalTaxesAndFees: "50",
+    totalAmount: 1380,
     ratePlan: {
       rate_plan_id: 11976,
       name: "Best Available Rate",
@@ -144,7 +145,7 @@ test("builds one complete documented line item per requested room", () => {
   assert.equal(result.summary.taxesAndFees, 100);
 });
 
-test("adds only the documented booking and invoice wrapper fields", () => {
+test("full-online payload uses the complete validated total and 100 percent", () => {
   const core = prepareBookingCore(request, availability, 7849).payload;
   const booking = buildSimplotelBookingPayload(core);
   assert.equal(booking.advanceAmount, 0);
@@ -154,18 +155,9 @@ test("adds only the documented booking and invoice wrapper fields", () => {
     unit: "HOURS",
   });
 
-  const payNow = buildSimplotelInvoicePayload(core, 5000, 100);
-  assert.equal(payNow.advanceAmount, 5000);
+  const payNow = buildFullOnlineInvoicePayload(core);
+  assert.equal(payNow.advanceAmount, 1380);
   assert.equal(payNow.advancePercentage, 100);
-  const payAtHotel = buildSimplotelInvoicePayload(core, 0, 0);
-  assert.equal(payAtHotel.advanceAmount, 0);
-  assert.equal(payAtHotel.advancePercentage, 0);
-  assert.throws(
-    () => buildSimplotelInvoicePayload(core, 5000, 0),
-    (error: unknown) =>
-      error instanceof BookingPreparationError &&
-      error.code === "INVALID_REQUEST"
-  );
 });
 
 test("preserves the proven total_room_price availability variant", () => {
@@ -184,6 +176,7 @@ test("preserves the proven total_room_price availability variant", () => {
       selection: {
         ...request.selection,
         totalPrice: "725",
+        totalAmount: 1550,
         occupancy: selectedOccupancy,
       },
     },
@@ -246,6 +239,23 @@ test("rejects a price or tax change during revalidation", () => {
 
   assert.throws(
     () => prepareBookingCore(request, changed, 7849),
+    (error: unknown) =>
+      error instanceof BookingPreparationError &&
+      error.code === "SELECTION_CHANGED"
+  );
+});
+
+test("rejects a reviewed total that differs from the fresh complete total", () => {
+  assert.throws(
+    () =>
+      prepareBookingCore(
+        {
+          ...request,
+          selection: { ...request.selection, totalAmount: 1379 },
+        },
+        availability,
+        7849
+      ),
     (error: unknown) =>
       error instanceof BookingPreparationError &&
       error.code === "SELECTION_CHANGED"

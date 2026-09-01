@@ -14,7 +14,7 @@ export type SimplotelInvoiceConfirmation = SimplotelBookingConfirmation & {
 
 export class BookingExecutionError extends Error {
   readonly code:
-    | "BOOKING_DISABLED"
+    | "EXECUTION_DISABLED"
       | "INVALID_SUBMISSION"
       | "NO_LONGER_AVAILABLE"
       | "SIMPLOTEL_REJECTED"
@@ -24,7 +24,7 @@ export class BookingExecutionError extends Error {
   constructor(
     message: string,
     code:
-      | "BOOKING_DISABLED"
+      | "EXECUTION_DISABLED"
       | "INVALID_SUBMISSION"
       | "NO_LONGER_AVAILABLE"
       | "SIMPLOTEL_REJECTED"
@@ -37,7 +37,15 @@ export class BookingExecutionError extends Error {
   }
 }
 
-export function isBookingCreationEnabled(value = process.env.SIMPLOTEL_BOOKING_ENABLED) {
+export function isFullOnlinePaymentEnabled(
+  value = process.env.SIMPLOTEL_BOOKING_ENABLED
+) {
+  return value === "true";
+}
+
+export function isDirectBookingEnabled(
+  value = process.env.SIMPLOTEL_DIRECT_BOOKING_ENABLED
+) {
   return value === "true";
 }
 
@@ -224,8 +232,8 @@ export async function postToSimplotel({
 export function requireBookingCreationEnabled(enabled: boolean) {
   if (!enabled) {
     throw new BookingExecutionError(
-      "Booking creation is not enabled.",
-      "BOOKING_DISABLED",
+      "Simplotel booking and payment execution is not enabled.",
+      "EXECUTION_DISABLED",
       403
     );
   }

@@ -7,13 +7,13 @@ import {
   simplotel,
   AvailabilityRequest,
   BookingGuestDetails,
-  BookingConfirmationResponse,
+  PaymentLinkResponse,
   BookingPreparationResponse,
   JsonValue,
   LiveStayRate,
 } from "../services/simplotel";
 
-type BookingStep = "search" | "guest" | "summary" | "prepared" | "confirmation";
+type BookingStep = "search" | "guest" | "summary" | "prepared" | "paymentPending";
 
 function formatDisplayApiDate(date: string) {
   const [year, month, day] = date.split("-");
@@ -133,7 +133,7 @@ export function BookingScreen({ onBack }: { onBack: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [flowError, setFlowError] = useState("");
   const [preparation, setPreparation] = useState<BookingPreparationResponse | null>(null);
-  const [confirmation, setConfirmation] = useState<BookingConfirmationResponse | null>(null);
+  const [paymentLink, setPaymentLink] = useState<PaymentLinkResponse | null>(null);
   const submissionLock = useRef(false);
   const submissionId = useRef<string | null>(null);
   const formatDate = (date: Date | null) => {
@@ -222,7 +222,7 @@ const formatApiDate = (date: Date) => {
     setSelectedRate(rate);
     setFlowError("");
     setPreparation(null);
-    setConfirmation(null);
+    setPaymentLink(null);
     submissionId.current = null;
     submissionLock.current = false;
     setStep("guest");
@@ -272,10 +272,10 @@ const formatApiDate = (date: Date) => {
     }
   };
 
-  const handleCreateBooking = async () => {
+  const handleCreatePaymentLink = async () => {
     if (
       submissionLock.current ||
-      !preparation?.bookingCreationEnabled ||
+      !preparation?.paymentCreationEnabled ||
       !searchRequest ||
       !selectedRate
     ) return;
@@ -286,19 +286,19 @@ const formatApiDate = (date: Date) => {
     submissionId.current ??=
       `mobile_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
     try {
-      const result = await simplotel.createBooking({
+      const result = await simplotel.createFullOnlinePayment({
         request: searchRequest,
         selectedRate,
         guest,
         submissionId: submissionId.current,
       });
-      setConfirmation(result);
-      setStep("confirmation");
+      setPaymentLink(result);
+      setStep("paymentPending");
     } catch (bookingError) {
       setFlowError(
         bookingError instanceof Error
           ? bookingError.message
-          : "Booking could not be completed."
+          : "Payment link could not be created."
       );
     } finally {
       submissionLock.current = false;
@@ -334,7 +334,7 @@ const formatApiDate = (date: Date) => {
               setFlowError("");
               if (step === "guest") setStep("search");
               else if (step === "summary") setStep("guest");
-              else if (step === "confirmation") setStep("prepared");
+              else if (step === "paymentPending") setStep("prepared");
               else setStep("summary");
             }}
             style={styles.back}
@@ -346,8 +346,8 @@ const formatApiDate = (date: Date) => {
               ? "Guest details"
               : step === "summary"
                 ? "Booking summary"
-                : step === "confirmation"
-                  ? "Booking confirmation"
+                : step === "paymentPending"
+                  ? "Payment"
                   : "Final review"}
           </Text>
           <View style={{ width: 40 }} />
@@ -415,6 +415,7 @@ const formatApiDate = (date: Date) => {
                   label="Rate plan"
                   value={review?.ratePlanName ?? selectedRate.ratePlanName ?? "Rate plan"}
                 />
+                <SummaryRow label="Payment method" value="Pay full online" />
                 <SummaryRow label="Guest" value={displayGuest.name} />
                 <SummaryRow label="Email" value={displayGuest.email} />
                 <SummaryRow label="Phone" value={displayGuest.phone} />
@@ -428,7 +429,7 @@ const formatApiDate = (date: Date) => {
                   value={`₹${displayTaxes.toLocaleString("en-IN")}`}
                 />
                 <SummaryRow
-                  label={step === "prepared" ? "Validated total" : "Displayed total"}
+                  label={step === "prepared" || step === "paymentPending" ? "Validated total" : "Displayed total"}
                   value={`₹${displayTotal.toLocaleString("en-IN")}`}
                   strong
                 />
@@ -437,24 +438,25 @@ const formatApiDate = (date: Date) => {
                 </Text>
               </View>
 
-              {step === "confirmation" && confirmation ? (
+              {step === "paymentPending" && paymentLink ? (
                 <View style={styles.preparedCard}>
                   <Ionicons name="checkmark-circle" size={50} color={colors.leaf} />
-                  <Text style={styles.preparedTitle}>Booking confirmed</Text>
+                  <Text style={styles.preparedTitle}>Payment link created</Text>
                   <Text style={styles.preparedText}>
-                    Simplotel created the booking and returned the documented confirmation identifiers.
+                    Simplotel created the invoice and payment link for the full validated amount.
                   </Text>
-                  <SummaryRow label="Booking ID" value={confirmation.booking_id} strong />
-                  <SummaryRow label="Quote ID" value={confirmation.quote_id} />
+                  <SummaryRow label="Booking ID" value={paymentLink.booking_id} />
+                  <SummaryRow label="Quote ID" value={paymentLink.quote_id} />
+                  <SummaryRow label="Invoice ID" value={String(paymentLink.invoice_id)} strong />
                   <Text style={styles.notBookedText}>
-                    Payment is not confirmed by this booking response.
+                    Payment pending. Follow the payment link sent by Simplotel. This does not mean the stay is paid.
                   </Text>
                 </View>
               ) : step === "summary" ? (
                 <>
                   <View style={styles.warningNotice}>
                     <Text style={styles.warningText}>
-                      This validates current availability and prepares documented booking data. It does not create a reservation or process payment.
+                      This validates current availability and prepares the full-online payment request. It does not create an invoice or payment link.
                     </Text>
                   </View>
                   <Pressable
@@ -477,43 +479,43 @@ const formatApiDate = (date: Date) => {
                     />
                     <Text style={styles.preparedTitle}>Ready for final confirmation</Text>
                     <Text style={styles.preparedText}>
-                      Live availability was rechecked and {preparation.preservedBookingData.lineItemCount} complete room line item{preparation.preservedBookingData.lineItemCount === 1 ? " was" : "s were"} prepared on the server.
+                      Live availability was rechecked and {preparation.preservedBookingData.lineItemCount} complete room line item{preparation.preservedBookingData.lineItemCount === 1 ? " was" : "s were"} prepared for full online payment.
                     </Text>
                     <Text style={styles.notBookedText}>
-                      No booking has been created and no payment has been requested.
+                      No invoice or payment link has been created yet.
                     </Text>
                   </View>
                   <Pressable
                     testID="booking-final-action"
                     style={[
                       styles.button,
-                      (!preparation.bookingCreationEnabled || submitting) &&
+                      (!preparation.paymentCreationEnabled || submitting) &&
                         styles.finalActionDisabled,
                     ]}
-                    disabled={!preparation.bookingCreationEnabled || submitting}
-                    onPress={handleCreateBooking}
+                    disabled={!preparation.paymentCreationEnabled || submitting}
+                    onPress={handleCreatePaymentLink}
                     accessibilityRole="button"
                     accessibilityState={{
-                      disabled: !preparation.bookingCreationEnabled || submitting,
+                      disabled: !preparation.paymentCreationEnabled || submitting,
                     }}
                   >
                     <Ionicons
-                      name={preparation.bookingCreationEnabled ? "checkmark" : "lock-closed"}
+                      name={preparation.paymentCreationEnabled ? "card" : "lock-closed"}
                       size={17}
                       color={colors.white}
                     />
                     <Text style={styles.buttonText}>
                       {submitting
-                        ? "Creating booking..."
-                        : preparation.bookingCreationEnabled
-                          ? "Confirm booking"
-                          : "Booking not yet enabled"}
+                        ? "Creating payment link..."
+                        : preparation.paymentCreationEnabled
+                          ? "Pay full online"
+                          : "Payment not yet enabled"}
                     </Text>
                   </Pressable>
                   <Text style={styles.finalActionNote}>
-                    {preparation.bookingCreationEnabled
-                      ? "Availability and price will be checked again before the booking is submitted."
-                      : "Booking creation is disabled by the server safety setting."}
+                    {preparation.paymentCreationEnabled
+                      ? "Availability and the full total will be checked again before the invoice request is submitted."
+                      : "Payment-link creation is disabled by the server safety setting."}
                   </Text>
                 </>
               ) : null}

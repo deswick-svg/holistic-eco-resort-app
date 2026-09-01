@@ -9,7 +9,7 @@ import {
 import {
   BookingExecutionError,
   bookingSubmissionRegistry,
-  isBookingCreationEnabled,
+  isDirectBookingEnabled,
   postToSimplotel,
   requireBookingCreationEnabled,
 } from "../../../../lib/simplotel/bookingExecution";
@@ -18,7 +18,7 @@ const SIMPLOTEL_HOTEL_ID = 7849;
 
 export async function POST(request: Request) {
   try {
-    requireBookingCreationEnabled(isBookingCreationEnabled());
+    requireBookingCreationEnabled(isDirectBookingEnabled());
 
     const accessToken = process.env.SIMPLOTEL_ACCESS_TOKEN;
     if (!accessToken) {
