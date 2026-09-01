@@ -6,6 +6,7 @@ import { BookingScreen } from './src/screens/BookingScreen';
 import { DiningScreen } from './src/screens/DiningScreen';
 import { ActivitiesScreen } from './src/screens/ActivitiesScreen';
 import { SpaScreen } from './src/screens/SpaScreen';
+import { GalleryScreen } from './src/screens/GalleryScreen';
 import { PlaceholderScreen } from './src/screens/PlaceholderScreen';
 import { MenuDrawer } from './src/components/MenuDrawer';
 import { colors } from './src/theme/colors';
@@ -32,6 +33,8 @@ export default function App() {
         <ActivitiesScreen onBack={() => setScreen('home')} />
       ) : screen === 'spa' ? (
         <SpaScreen onBack={() => setScreen('home')} />
+      ) : screen === 'gallery' ? (
+        <GalleryScreen onBack={() => setScreen('home')} />
       ) : (
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}
