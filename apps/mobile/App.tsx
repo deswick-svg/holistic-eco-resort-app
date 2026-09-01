@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BookingScreen } from './src/screens/BookingScreen';
 import { DiningScreen } from './src/screens/DiningScreen';
+import { ActivitiesScreen } from './src/screens/ActivitiesScreen';
 import { PlaceholderScreen } from './src/screens/PlaceholderScreen';
 import { MenuDrawer } from './src/components/MenuDrawer';
 import { colors } from './src/theme/colors';
@@ -26,6 +27,8 @@ export default function App() {
         <BookingScreen onBack={() => setScreen('home')} />
       ) : screen === 'dining' ? (
         <DiningScreen onBack={() => setScreen('home')} />
+      ) : screen === 'activities' ? (
+        <ActivitiesScreen onBack={() => setScreen('home')} />
       ) : (
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}
