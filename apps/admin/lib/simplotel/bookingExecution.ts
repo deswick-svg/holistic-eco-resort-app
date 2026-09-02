@@ -12,6 +12,24 @@ export type SimplotelInvoiceConfirmation = SimplotelBookingConfirmation & {
   invoice_id?: number;
 };
 
+export function buildPaymentLinkResult(identifiers: SimplotelInvoiceConfirmation) {
+  if (!identifiers.booking_id || !identifiers.quote_id || !Number.isInteger(identifiers.invoice_id)) {
+    throw new BookingExecutionError(
+      "Invoice identifiers are missing. The outcome is uncertain; do not retry automatically.",
+      "OUTCOME_UNCERTAIN",
+      502
+    );
+  }
+  return {
+    booking_id: identifiers.booking_id,
+    quote_id: identifiers.quote_id,
+    invoice_id: identifiers.invoice_id,
+    status: "PAYMENT_LINK_CREATED" as const,
+    bookingStatus: "UNCONFIRMED" as const,
+    paymentStatus: "PAYMENT_PENDING" as const,
+  };
+}
+
 export class BookingExecutionError extends Error {
   readonly code:
     | "EXECUTION_DISABLED"

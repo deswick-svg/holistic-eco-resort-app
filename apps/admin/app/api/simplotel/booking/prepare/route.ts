@@ -93,7 +93,6 @@ export async function POST(request: Request) {
         method: "PAY_FULL_ONLINE",
         advanceAmount: prepared.summary.totalAmount,
         advancePercentage: 100,
-        holdInventory: { enabled: true, value: 24, unit: "HOURS" },
         paymentStatus: "NOT_STARTED",
       },
     });

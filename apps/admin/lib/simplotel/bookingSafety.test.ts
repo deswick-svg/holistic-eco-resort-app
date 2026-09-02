@@ -23,6 +23,9 @@ test("mobile source contains no Simplotel token or direct upstream target", () =
       source.includes("SIMPLOTEL_ACCESS_TOKEN") ||
       source.includes("admin.simplotel.com") ||
       source.includes("SIMPLOTEL_BOOKING_ENABLED")
+      || source.includes("SIMPLOTEL_INVOICE_HOLD_HOURS")
+      || source.includes("SIMPLOTEL_INVOICE_HOLD_VALUE")
+      || source.includes("SIMPLOTEL_INVOICE_HOLD_UNIT")
     );
   });
   assert.deepEqual(offenders, []);
@@ -74,6 +77,25 @@ test("full-online flow calls send-invoice and never book", () => {
   assert.doesNotMatch(invoiceRoute, /endpoint: "book"/);
   assert.match(mobileService, /api\/simplotel\/booking\/send-invoice/);
   assert.doesNotMatch(mobileService, /api\/simplotel\/booking[`"']/);
+  const holdIndex = invoiceRoute.indexOf("const inventoryHold = getInvoiceInventoryHold()");
+  assert.ok(holdIndex >= 0);
+  assert.ok(holdIndex < invoiceRoute.indexOf("voice-bot/availability"));
+  assert.ok(holdIndex < invoiceRoute.indexOf("await request.json()"));
+  assert.match(invoiceRoute, /buildFullOnlineInvoicePayload\(prepared.payload, inventoryHold\)/);
+  assert.match(invoiceRoute, /buildPaymentLinkResult\(confirmation\)/);
+  assert.doesNotMatch(mobileService, /holdInventory/);
+});
+
+test("mobile invoice success explicitly stays unconfirmed and payment pending", () => {
+  const source = readFileSync(
+    join(repositoryRoot, "apps", "mobile", "src", "screens", "BookingScreen.tsx"), "utf8"
+  );
+  const pending = source.slice(source.indexOf('{step === "paymentPending" && paymentLink'), source.indexOf(') : step === "summary"'));
+  assert.match(pending, /value="Unconfirmed"/);
+  assert.match(pending, /value="Payment pending"/);
+  assert.match(pending, /temporarily held/);
+  assert.match(pending, /until the inventory hold expires/);
+  assert.doesNotMatch(pending, />Booking confirmed<|value="Paid"/);
 });
 
 test("mobile final action remains disabled when server capability is false", () => {

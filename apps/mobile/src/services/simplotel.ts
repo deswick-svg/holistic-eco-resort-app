@@ -98,7 +98,6 @@ export type BookingPreparationResponse = {
     method: "PAY_FULL_ONLINE";
     advanceAmount: number;
     advancePercentage: 100;
-    holdInventory: { enabled: true; value: 24; unit: "HOURS" };
     paymentStatus: "NOT_STARTED";
   };
 };
@@ -109,6 +108,7 @@ export type PaymentLinkResponse = {
   quote_id: string;
   invoice_id: number;
   paymentStatus: "PAYMENT_PENDING";
+  bookingStatus: "UNCONFIRMED";
 };
 
 function bookingRequestBody(input: {
@@ -320,7 +320,10 @@ export const simplotel = {
     if (!response.ok) {
       throw new Error(data?.error?.message ?? "Payment link could not be created.");
     }
-    if (!data?.booking_id || !data?.quote_id || !Number.isInteger(data?.invoice_id)) {
+    if (!data?.booking_id || !data?.quote_id || !Number.isInteger(data?.invoice_id) ||
+        data?.status !== "PAYMENT_LINK_CREATED" ||
+        data?.bookingStatus !== "UNCONFIRMED" ||
+        data?.paymentStatus !== "PAYMENT_PENDING") {
       throw new Error("Invoice response did not contain the required identifiers.");
     }
     return data as PaymentLinkResponse;

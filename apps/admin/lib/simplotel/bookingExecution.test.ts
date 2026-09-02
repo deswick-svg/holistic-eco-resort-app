@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BookingExecutionError,
+  buildPaymentLinkResult,
   BookingSubmissionRegistry,
   isDirectBookingEnabled,
   isFullOnlinePaymentEnabled,
@@ -137,6 +138,27 @@ test("valid send-invoice response preserves all documented identifiers", async (
     invoice_id: 12345,
   });
   assert.deepEqual(JSON.parse(requestBody), payload);
+  assert.deepEqual(buildPaymentLinkResult(confirmation), {
+    booking_id: "KMDXCM",
+    quote_id: "QMHIFV",
+    invoice_id: 12345,
+    status: "PAYMENT_LINK_CREATED",
+    bookingStatus: "UNCONFIRMED",
+    paymentStatus: "PAYMENT_PENDING",
+  });
+});
+
+test("payment-link result requires invoice identifiers and cannot accept upstream status claims", () => {
+  assert.throws(
+    () => buildPaymentLinkResult({ booking_id: "B", quote_id: "Q" }),
+    BookingExecutionError
+  );
+  const result = buildPaymentLinkResult({
+    ...{ bookingStatus: "CONFIRMED", paymentStatus: "PAID" },
+    booking_id: "B", quote_id: "Q", invoice_id: 123,
+  });
+  assert.equal(result.bookingStatus, "UNCONFIRMED");
+  assert.equal(result.paymentStatus, "PAYMENT_PENDING");
 });
 
 test("malformed success and network uncertainty never become confirmation", async () => {

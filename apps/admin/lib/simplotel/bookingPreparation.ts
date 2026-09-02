@@ -118,8 +118,25 @@ export type SimplotelBookingPayload = PreparedBookingCore & {
 export type SimplotelInvoicePayload = PreparedBookingCore & {
   advanceAmount: number;
   advancePercentage: 100;
-  holdInventory: SimplotelBookingPayload["holdInventory"];
+  holdInventory: { enabled: true; value: number; unit: "MINUTES" | "HOURS" | "DAYS" };
 };
+
+export class InvoiceConfigurationError extends Error {}
+
+export function getInvoiceInventoryHold(
+  value = process.env.SIMPLOTEL_INVOICE_HOLD_VALUE,
+  unit = process.env.SIMPLOTEL_INVOICE_HOLD_UNIT
+): SimplotelInvoicePayload["holdInventory"] {
+  if (
+    !value || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)) ||
+    (unit !== "MINUTES" && unit !== "HOURS" && unit !== "DAYS")
+  ) {
+    throw new InvoiceConfigurationError(
+      "Invoice creation is unavailable because the server inventory hold is not configured correctly."
+    );
+  }
+  return { enabled: true, value: Number(value), unit };
+}
 
 export class BookingPreparationError extends Error {
   readonly code:
@@ -518,7 +535,8 @@ export function buildSimplotelBookingPayload(
 }
 
 export function buildFullOnlineInvoicePayload(
-  core: PreparedBookingCore
+  core: PreparedBookingCore,
+  holdInventory = getInvoiceInventoryHold()
 ): SimplotelInvoicePayload {
   const advanceAmount = core.lineItems.reduce(
     (total, item) =>
@@ -538,6 +556,6 @@ export function buildFullOnlineInvoicePayload(
     ...structuredClone(core),
     advanceAmount,
     advancePercentage: 100,
-    holdInventory: { enabled: true, value: 24, unit: "HOURS" },
+    holdInventory: { ...holdInventory },
   };
 }

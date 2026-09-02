@@ -448,8 +448,10 @@ const formatApiDate = (date: Date) => {
                   <SummaryRow label="Booking ID" value={paymentLink.booking_id} />
                   <SummaryRow label="Quote ID" value={paymentLink.quote_id} />
                   <SummaryRow label="Invoice ID" value={String(paymentLink.invoice_id)} strong />
+                  <SummaryRow label="Booking status" value="Unconfirmed" />
+                  <SummaryRow label="Payment status" value="Payment pending" />
                   <Text style={styles.notBookedText}>
-                    Payment pending. Follow the payment link sent by Simplotel. This does not mean the stay is paid.
+                    Your room is temporarily held while payment is pending. The payment link is valid only until the inventory hold expires. Your booking remains unconfirmed until payment is completed successfully. Follow the payment link sent by Simplotel; creating the link does not mean payment has been received.
                   </Text>
                 </View>
               ) : step === "summary" ? (
@@ -477,12 +479,13 @@ const formatApiDate = (date: Date) => {
                       size={42}
                       color={colors.leaf}
                     />
-                    <Text style={styles.preparedTitle}>Ready for final confirmation</Text>
+                    <Text style={styles.preparedTitle}>Ready to create a payment link</Text>
                     <Text style={styles.preparedText}>
                       Live availability was rechecked and {preparation.preservedBookingData.lineItemCount} complete room line item{preparation.preservedBookingData.lineItemCount === 1 ? " was" : "s were"} prepared for full online payment.
                     </Text>
                     <Text style={styles.notBookedText}>
                       No invoice or payment link has been created yet.
+                      {"\n"}After the link is created, the room is temporarily held. Complete payment before the hold expires; the booking remains unconfirmed until successful payment.
                     </Text>
                   </View>
                   <Pressable

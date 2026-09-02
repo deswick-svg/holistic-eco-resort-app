@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   BookingPreparationError,
+  InvoiceConfigurationError,
+  getInvoiceInventoryHold,
   buildFullOnlineInvoicePayload,
   prepareBookingCore,
   validateBookingPreparationRequest,
@@ -8,6 +10,7 @@ import {
 } from "../../../../../lib/simplotel/bookingPreparation";
 import {
   BookingExecutionError,
+  buildPaymentLinkResult,
   bookingSubmissionRegistry,
   isFullOnlinePaymentEnabled,
   postToSimplotel,
@@ -19,6 +22,7 @@ const SIMPLOTEL_HOTEL_ID = 7849;
 export async function POST(request: Request) {
   try {
     requireBookingCreationEnabled(isFullOnlinePaymentEnabled());
+    const inventoryHold = getInvoiceInventoryHold();
 
     const accessToken = process.env.SIMPLOTEL_ACCESS_TOKEN;
     if (!accessToken) {
@@ -76,17 +80,19 @@ export async function POST(request: Request) {
           endpoint: "send-invoice",
           hotelId: SIMPLOTEL_HOTEL_ID,
           accessToken,
-          payload: buildFullOnlineInvoicePayload(prepared.payload),
+          payload: buildFullOnlineInvoicePayload(prepared.payload, inventoryHold),
         });
       }
     );
 
-    return NextResponse.json({
-      status: "PAYMENT_LINK_CREATED",
-      ...confirmation,
-      paymentStatus: "PAYMENT_PENDING",
-    });
+    return NextResponse.json(buildPaymentLinkResult(confirmation));
   } catch (error) {
+    if (error instanceof InvoiceConfigurationError) {
+      return NextResponse.json(
+        { error: { code: "SERVER_CONFIGURATION", message: error.message } },
+        { status: 500 }
+      );
+    }
     if (error instanceof BookingPreparationError) {
       return NextResponse.json(
         { error: { code: error.code, message: error.message } },
