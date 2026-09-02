@@ -4,3 +4,18 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Expo Prebuild generates native Android sources from app.json and config plugins.
+# Keep the local native project (including its debug signing key) out of Git.
+/apps/mobile/android/
+
+# Local Android outputs/caches/signing material, wherever generated under mobile.
+/apps/mobile/**/build/
+/apps/mobile/**/.gradle/
+/apps/mobile/**/.cxx/
+/apps/mobile/**/local.properties
+/apps/mobile/**/*.apk
+/apps/mobile/**/*.aab
+/apps/mobile/**/*.keystore
+/apps/mobile/**/*.jks
+/apps/mobile/**/*.hprof

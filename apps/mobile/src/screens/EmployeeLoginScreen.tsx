@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Image,
   ImageBackground,
@@ -8,43 +8,15 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { employeeAuth } from '../services/employeeAuth';
 import { colors } from '../theme/colors';
-
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { AccountAuthForm } from '../components/AccountAuthForm';
 
 export function EmployeeLoginScreen({ onBack }: { onBack: () => void }) {
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleContinue = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    setMessage(null);
-
-    if (!emailPattern.test(normalizedEmail)) {
-      setEmailError('Enter a valid employee email address.');
-      return;
-    }
-
-    setEmailError(null);
-    setSubmitting(true);
-    try {
-      const result = await employeeAuth.beginSignIn({ email: normalizedEmail });
-      if (result.status === 'not_connected') {
-        setMessage(result.message);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
@@ -70,7 +42,7 @@ export function EmployeeLoginScreen({ onBack }: { onBack: () => void }) {
           <View style={styles.heroCopy}>
             <Text style={styles.eyebrow}>AUTHORIZED STAFF ONLY</Text>
             <Text style={styles.heroTitle}>Employee access</Text>
-            <Text style={styles.heroSubtitle}>A future secure entry point for approved Holistic Eco-Resort staff.</Text>
+            <Text style={styles.heroSubtitle}>Secure account access for approved Holistic Eco-Resort staff.</Text>
           </View>
         </ImageBackground>
 
@@ -90,55 +62,7 @@ export function EmployeeLoginScreen({ onBack }: { onBack: () => void }) {
 
           <View style={styles.formCard}>
             <Text style={styles.formEyebrow}>STAFF SIGN IN</Text>
-            <Text style={styles.formTitle}>Continue with work email</Text>
-            <Text style={styles.formIntro}>
-              Enter your employee email address to begin. No credentials are collected until an approved secure
-              staff authentication provider is connected.
-            </Text>
-
-            <Text style={styles.fieldLabel}>EMPLOYEE EMAIL</Text>
-            <View style={[styles.inputWrap, emailError && styles.inputWrapError]}>
-              <Ionicons name="mail-outline" size={20} color={colors.muted} />
-              <TextInput
-                accessibilityLabel="Employee email address"
-                autoCapitalize="none"
-                autoComplete="email"
-                autoCorrect={false}
-                inputMode="email"
-                keyboardType="email-address"
-                onChangeText={(value) => {
-                  setEmail(value);
-                  if (emailError) setEmailError(null);
-                  if (message) setMessage(null);
-                }}
-                onSubmitEditing={handleContinue}
-                placeholder="employee@example.com"
-                placeholderTextColor="#909991"
-                returnKeyType="next"
-                style={styles.input}
-                textContentType="emailAddress"
-                value={email}
-              />
-            </View>
-            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Continue to employee sign in"
-              disabled={submitting}
-              onPress={handleContinue}
-              style={({ pressed }) => [styles.continueButton, pressed && styles.pressed, submitting && styles.disabled]}
-            >
-              <Text style={styles.continueText}>{submitting ? 'Checking…' : 'Continue'}</Text>
-              <Ionicons name="arrow-forward" size={19} color={colors.white} />
-            </Pressable>
-
-            {message ? (
-              <View accessibilityRole="alert" style={styles.unavailableCard}>
-                <Ionicons name="information-circle-outline" size={21} color={colors.forest} />
-                <Text style={styles.unavailableText}>{message}</Text>
-              </View>
-            ) : null}
+            <AccountAuthForm provider={employeeAuth} employee />
           </View>
 
           <View style={styles.securityCard}>
@@ -147,13 +71,13 @@ export function EmployeeLoginScreen({ onBack }: { onBack: () => void }) {
               <Text style={styles.securityTitle}>Access remains locked</Text>
             </View>
             <Text style={styles.securityText}>
-              This foundation does not authenticate employees or grant access to admin functions, guest data,
-              bookings, payments, or resort operations.
+              Employee identity is checked against the Employees group. Admin functions, guest data,
+              bookings, payments, and resort operations remain unavailable.
             </Text>
           </View>
 
           <Text style={styles.privacyNote}>
-            No account is created and the entered email address is not stored on this device.
+            Employee accounts are provisioned by the resort administrator. Session data is protected with secure device storage.
           </Text>
         </View>
       </ScrollView>

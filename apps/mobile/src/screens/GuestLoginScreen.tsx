@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Image,
   ImageBackground,
@@ -8,43 +8,15 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { guestAuth } from '../services/guestAuth';
 import { colors } from '../theme/colors';
-
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { AccountAuthForm } from '../components/AccountAuthForm';
 
 export function GuestLoginScreen({ onBack }: { onBack: () => void }) {
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleContinue = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    setMessage(null);
-
-    if (!emailPattern.test(normalizedEmail)) {
-      setEmailError('Enter a valid email address.');
-      return;
-    }
-
-    setEmailError(null);
-    setSubmitting(true);
-    try {
-      const result = await guestAuth.beginSignIn({ email: normalizedEmail });
-      if (result.status === 'not_connected') {
-        setMessage(result.message);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
@@ -80,55 +52,7 @@ export function GuestLoginScreen({ onBack }: { onBack: () => void }) {
               <Ionicons name="lock-closed-outline" size={29} color={colors.forest} />
             </View>
             <Text style={styles.formEyebrow}>SECURE ACCESS</Text>
-            <Text style={styles.formTitle}>Continue with email</Text>
-            <Text style={styles.formIntro}>
-              Enter your email address to begin. Passwords and verification codes are never collected until a
-              secure authentication provider is connected.
-            </Text>
-
-            <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
-            <View style={[styles.inputWrap, emailError && styles.inputWrapError]}>
-              <Ionicons name="mail-outline" size={20} color={colors.muted} />
-              <TextInput
-                accessibilityLabel="Email address"
-                autoCapitalize="none"
-                autoComplete="email"
-                autoCorrect={false}
-                inputMode="email"
-                keyboardType="email-address"
-                onChangeText={(value) => {
-                  setEmail(value);
-                  if (emailError) setEmailError(null);
-                  if (message) setMessage(null);
-                }}
-                onSubmitEditing={handleContinue}
-                placeholder="you@example.com"
-                placeholderTextColor="#909991"
-                returnKeyType="next"
-                style={styles.input}
-                textContentType="emailAddress"
-                value={email}
-              />
-            </View>
-            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Continue to guest sign in"
-              disabled={submitting}
-              onPress={handleContinue}
-              style={({ pressed }) => [styles.continueButton, pressed && styles.pressed, submitting && styles.disabled]}
-            >
-              <Text style={styles.continueText}>{submitting ? 'Checking…' : 'Continue'}</Text>
-              <Ionicons name="arrow-forward" size={19} color={colors.white} />
-            </Pressable>
-
-            {message ? (
-              <View accessibilityRole="alert" style={styles.unavailableCard}>
-                <Ionicons name="information-circle-outline" size={21} color={colors.forest} />
-                <Text style={styles.unavailableText}>{message}</Text>
-              </View>
-            ) : null}
+            <AccountAuthForm provider={guestAuth} />
           </View>
 
           <View style={styles.accountBenefits}>
@@ -148,7 +72,7 @@ export function GuestLoginScreen({ onBack }: { onBack: () => void }) {
           </View>
 
           <Text style={styles.privacyNote}>
-            This screen does not create an account, authenticate a guest, or store the email address on the device.
+            Guest registration requires email verification. Session data is protected with secure device storage.
           </Text>
         </View>
       </ScrollView>

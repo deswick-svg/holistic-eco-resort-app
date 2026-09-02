@@ -1,17 +1,14 @@
-import type { GuestAuthProvider, GuestSignInRequest, GuestSignInResult } from '../types/guestAuth';
+import type { GuestAuthProvider } from '../types/guestAuth';
+import { cognitoAuth } from './cognitoAuth';
 
-const unavailableMessage =
-  'Secure guest account access is not connected yet. No sign-in request has been sent.';
-
-/**
- * Safe default adapter. Replace this implementation with an approved backend or
- * Cognito provider only when account creation, verification and secure session
- * storage have been designed and deployed.
- */
-class UnconnectedGuestAuthProvider implements GuestAuthProvider {
-  async beginSignIn(_request: GuestSignInRequest): Promise<GuestSignInResult> {
-    return { status: 'not_connected', message: unavailableMessage };
-  }
-}
-
-export const guestAuth: GuestAuthProvider = new UnconnectedGuestAuthProvider();
+export const guestAuth: GuestAuthProvider = {
+  beginSignIn: request => cognitoAuth.beginSignIn('guest', request),
+  confirmSignIn: response => cognitoAuth.confirmSignIn('guest', response),
+  restoreSession: () => cognitoAuth.restoreSession('guest'),
+  signOut: () => cognitoAuth.signOut(),
+  signUp: request => cognitoAuth.signUp(request.email, request.password),
+  confirmEmail: (email, code) => cognitoAuth.confirmEmail(email, code),
+  resendVerification: email => cognitoAuth.resendVerification(email),
+  resetPassword: email => cognitoAuth.resetPassword(email),
+  confirmResetPassword: (email, code, password) => cognitoAuth.confirmResetPassword(email, code, password),
+};

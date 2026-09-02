@@ -1,17 +1,13 @@
-import type { EmployeeAuthProvider, EmployeeSignInRequest, EmployeeSignInResult } from '../types/employeeAuth';
+import type { EmployeeAuthProvider } from '../types/employeeAuth';
+import { cognitoAuth } from './cognitoAuth';
 
-const unavailableMessage =
-  'Secure employee access is not connected yet. No sign-in request has been sent and no staff access has been granted.';
-
-/**
- * Safe default staff adapter. Keep this separate from guest authentication.
- * Replace only after an approved employee identity provider, authorization
- * model and secure session-storage strategy have been deployed.
- */
-class UnconnectedEmployeeAuthProvider implements EmployeeAuthProvider {
-  async beginSignIn(_request: EmployeeSignInRequest): Promise<EmployeeSignInResult> {
-    return { status: 'not_connected', message: unavailableMessage };
-  }
-}
-
-export const employeeAuth: EmployeeAuthProvider = new UnconnectedEmployeeAuthProvider();
+export const employeeAuth: EmployeeAuthProvider = {
+  beginSignIn: request => cognitoAuth.beginSignIn('employee', request),
+  confirmSignIn: response => cognitoAuth.confirmSignIn('employee', response),
+  restoreSession: () => cognitoAuth.restoreSession('employee'),
+  signOut: () => cognitoAuth.signOut(),
+  confirmEmail: (email, code) => cognitoAuth.confirmEmail(email, code),
+  resendVerification: email => cognitoAuth.resendVerification(email),
+  resetPassword: email => cognitoAuth.resetPassword(email),
+  confirmResetPassword: (email, code, password) => cognitoAuth.confirmResetPassword(email, code, password),
+};
