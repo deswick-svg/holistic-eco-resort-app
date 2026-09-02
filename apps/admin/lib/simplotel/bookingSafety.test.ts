@@ -26,6 +26,8 @@ test("mobile source contains no Simplotel token or direct upstream target", () =
       || source.includes("SIMPLOTEL_INVOICE_HOLD_HOURS")
       || source.includes("SIMPLOTEL_INVOICE_HOLD_VALUE")
       || source.includes("SIMPLOTEL_INVOICE_HOLD_UNIT")
+      || source.includes("SIMPLOTEL_INVOICE_TEST_SECRET")
+      || source.includes("X-Simplotel-Test-Authorization")
     );
   });
   assert.deepEqual(offenders, []);
@@ -73,6 +75,11 @@ test("full-online flow calls send-invoice and never book", () => {
   );
   assert.ok(guardIndex >= 0);
   assert.ok(guardIndex < invoiceRoute.indexOf("voice-bot/availability"));
+  const authIndex = invoiceRoute.indexOf("requireInvoiceTestAuthorization(request.headers)");
+  assert.ok(authIndex > guardIndex);
+  assert.ok(authIndex < invoiceRoute.indexOf("await request.json()"));
+  assert.ok(authIndex < invoiceRoute.indexOf("voice-bot/availability"));
+  assert.doesNotMatch(invoiceRoute, /console\./);
   assert.ok(guardIndex < invoiceRoute.indexOf('endpoint: "send-invoice"'));
   assert.doesNotMatch(invoiceRoute, /endpoint: "book"/);
   assert.match(mobileService, /api\/simplotel\/booking\/send-invoice/);

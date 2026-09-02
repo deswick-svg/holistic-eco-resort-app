@@ -132,6 +132,7 @@ type SimplotelRequest = {
   accessToken: string;
   payload: SimplotelBookingPayload | SimplotelInvoicePayload;
   fetcher?: typeof fetch;
+  invoiceTimeoutMs?: number;
 };
 
 function parseConfirmation(
@@ -184,13 +185,40 @@ function parseConfirmation(
   return { booking_id: bookingId, quote_id: quoteId };
 }
 
-export async function postToSimplotel({
+export async function postToSimplotel(request: SimplotelRequest) {
+  // Preserve the isolated direct-booking path unchanged.
+  if (request.endpoint !== "send-invoice") return executeSimplotelRequest(request);
+  const timeoutMs = request.invoiceTimeoutMs ?? 30_000;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new BookingExecutionError("Invalid invoice timeout.", "INVALID_SUBMISSION", 400);
+  }
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new BookingExecutionError(
+        "The invoice request timed out. The outcome is uncertain; do not retry. Contact the resort to reconcile it.",
+        "OUTCOME_UNCERTAIN",
+        502
+      ));
+      controller.abort();
+    }, timeoutMs);
+  });
+  try {
+    // Includes response-body parsing, not just receipt of HTTP headers.
+    return await Promise.race([executeSimplotelRequest(request, controller.signal), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function executeSimplotelRequest({
   endpoint,
   hotelId,
   accessToken,
   payload,
   fetcher = fetch,
-}: SimplotelRequest) {
+}: SimplotelRequest, signal?: AbortSignal) {
   let response: Response;
   try {
     response = await fetcher(
@@ -203,6 +231,7 @@ export async function postToSimplotel({
         },
         body: JSON.stringify(payload),
         cache: "no-store",
+        ...(signal ? { signal } : {}),
       }
     );
   } catch {

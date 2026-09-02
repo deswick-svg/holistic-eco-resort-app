@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomBytes } from "node:crypto";
+import {
+  InvoiceTestAuthorizationError,
+  requireInvoiceTestAuthorization,
+} from "./invoiceTestAuthorization.ts";
 import {
   BookingExecutionError,
   buildPaymentLinkResult,
@@ -17,7 +22,7 @@ const payload = {
   propertyId: 7849,
   advanceAmount: 1380,
   advancePercentage: 100,
-  holdInventory: { enabled: true, value: 24, unit: "HOURS" },
+  holdInventory: { enabled: true, value: 30, unit: "MINUTES" },
   quoteInfo: {
     checkInDate: "2026-10-10",
     checkOutDate: "2026-10-12",
@@ -37,6 +42,71 @@ const payload = {
   },
   lineItems: [],
 } satisfies SimplotelInvoicePayload;
+
+test("controlled invoice requires both execution and operator authorization", async () => {
+  const secret = randomBytes(32).toString("hex"); // Ephemeral test-only credential.
+  let calls = 0;
+  const run = async (enabled: boolean, supplied: string | null, configured: string) => {
+    requireBookingCreationEnabled(enabled);
+    const headers = new Headers();
+    if (supplied !== null) headers.set("X-Simplotel-Test-Authorization", supplied);
+    requireInvoiceTestAuthorization(headers, configured);
+    return postToSimplotel({
+      endpoint: "send-invoice", hotelId: 7849, accessToken: "mock-only", payload,
+      fetcher: async (url, init) => {
+        calls += 1;
+        assert.match(String(url), /\/send-invoice$/);
+        assert.equal(new Headers(init?.headers).has("X-Simplotel-Test-Authorization"), false);
+        assert.equal(String(init?.body).includes(secret), false);
+        assert.deepEqual(JSON.parse(String(init?.body)).holdInventory, { enabled: true, value: 30, unit: "MINUTES" });
+        return Response.json({ booking_id: "B1", quote_id: "Q1", invoice_id: 1 });
+      },
+    });
+  };
+  await assert.rejects(run(false, secret, secret), { code: "EXECUTION_DISABLED" });
+  for (const [supplied, configured] of [[null, secret], ["incorrect", secret], [secret, ""], [secret, "short"], [secret, ` ${secret}`]]) {
+    await assert.rejects(run(true, supplied, configured!), (error: unknown) => {
+      assert.ok(error instanceof InvoiceTestAuthorizationError);
+      assert.equal(error.message.includes(secret), false);
+      return true;
+    });
+  }
+  assert.equal(calls, 0);
+  const registry = new BookingSubmissionRegistry();
+  const operation = () => run(true, secret, secret);
+  const results = await Promise.all([
+    registry.run("operator_test_duplicate", operation),
+    registry.run("operator_test_duplicate", operation),
+  ]);
+  assert.equal(calls, 1);
+  assert.deepEqual(results[0], results[1]);
+  assert.equal(buildPaymentLinkResult(results[0]).bookingStatus, "UNCONFIRMED");
+  assert.equal(buildPaymentLinkResult(results[0]).paymentStatus, "PAYMENT_PENDING");
+});
+
+test("invoice timeout aborts a stalled fetch or response body without retry", async () => {
+  for (const stallBody of [false, true]) {
+    let calls = 0;
+    let signal: AbortSignal | null | undefined;
+    const registry = new BookingSubmissionRegistry();
+    const operation = () => postToSimplotel({
+      endpoint: "send-invoice", hotelId: 7849, accessToken: "mock-only", payload,
+      invoiceTimeoutMs: 10,
+      fetcher: async (_url, init) => {
+        calls += 1;
+        signal = init?.signal;
+        if (!stallBody) return new Promise<Response>(() => {});
+        const response = Response.json({});
+        response.json = () => new Promise(() => {});
+        return response;
+      },
+    });
+    await assert.rejects(registry.run("operator_timeout_test", operation), { code: "OUTCOME_UNCERTAIN" });
+    assert.equal(signal?.aborted, true);
+    await assert.rejects(registry.run("operator_timeout_test", operation), { code: "OUTCOME_UNCERTAIN" });
+    assert.equal(calls, 1);
+  }
+});
 
 test("full payment and direct booking use separate disabled-by-default flags", () => {
   assert.equal(isFullOnlinePaymentEnabled(undefined), false);

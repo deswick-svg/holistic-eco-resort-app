@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import {
+  InvoiceTestAuthorizationError,
+  requireInvoiceTestAuthorization,
+} from "../../../../../lib/simplotel/invoiceTestAuthorization";
+import {
   BookingPreparationError,
   InvoiceConfigurationError,
   getInvoiceInventoryHold,
@@ -22,6 +26,7 @@ const SIMPLOTEL_HOTEL_ID = 7849;
 export async function POST(request: Request) {
   try {
     requireBookingCreationEnabled(isFullOnlinePaymentEnabled());
+    requireInvoiceTestAuthorization(request.headers);
     const inventoryHold = getInvoiceInventoryHold();
 
     const accessToken = process.env.SIMPLOTEL_ACCESS_TOKEN;
@@ -87,6 +92,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(buildPaymentLinkResult(confirmation));
   } catch (error) {
+    if (error instanceof InvoiceTestAuthorizationError) {
+      return NextResponse.json(
+        { error: { code: "TEST_AUTHORIZATION_REQUIRED", message: error.message } },
+        { status: 403 }
+      );
+    }
     if (error instanceof InvoiceConfigurationError) {
       return NextResponse.json(
         { error: { code: "SERVER_CONFIGURATION", message: error.message } },
@@ -106,7 +117,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Simplotel invoice error:", error);
+    // Do not log request headers, guest data, or arbitrary error objects.
     return NextResponse.json(
       { error: { code: "INVOICE_FAILED", message: "The invoice request could not be completed." } },
       { status: 500 }
