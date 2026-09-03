@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { MyStaysSection } from '../components/MyStaysSection';
 
 /** Signed-in guest content inside the existing branded Guest Login shell. */
 export function MyAccountScreen({ account, onSignOut, busy }: {
@@ -27,6 +28,7 @@ export function MyAccountScreen({ account, onSignOut, busy }: {
       <Text style={styles.buttonText}>{busy ? 'Please wait…' : 'Sign out'}</Text>
     </Pressable>
     <Text style={styles.footer}>Signing out clears this device’s account session.</Text>
+    <MyStaysSection />
   </View>;
 }
 
