@@ -215,5 +215,25 @@ durable workflow attempts other than `invoice_created`.
 A lost DynamoDB acknowledgement is recovered with a consistent read. If the
 provider may have succeeded but identifiers cannot be durably confirmed, the record
 is moved to uncertain where possible and the operation fails closed; the provider
-is never automatically retried. Connecting real Cognito, fresh preparation,
-DynamoDB and Simplotel adapters to a guarded route requires separate approval.
+is never automatically retried. The guarded adapter connection described below
+was separately approved; external execution remains independently disabled.
+
+## Guarded send-invoice route connection
+
+The send-invoice route now delegates to `createSendInvoiceHandler` and the durable
+orchestrator. External execution remains disabled unless the pre-existing
+`SIMPLOTEL_BOOKING_ENABLED=true` capability and server-only invoice-test
+authorization both pass. These checks occur before Cognito verification, storage,
+availability or provider I/O. No flag or secret was changed by this connection.
+
+When enabled for a separately approved test, the route verifies the Cognito access
+token and uses only its issuer/sub with server property 7849. The mobile sends that
+access token only in the Authorization header. It never receives the operator test
+secret, AWS credentials, Simplotel token, owner partition or DynamoDB keys.
+
+The lazy write facade requires exactly `AWS_REGION=eu-north-1` and
+`GUEST_HISTORY_DYNAMODB_TABLE=holistic-eco-resort-guest-bookings-dev`, then relies
+on the AWS SDK provider chain. It exposes only begin/advance/getOwned operations.
+Fresh availability validation precedes the durable record; a successful dispatch
+claim precedes send-invoice. Successful provider identifiers are persisted before
+the route returns PAYMENT_LINK_CREATED / UNCONFIRMED / PAYMENT_PENDING.

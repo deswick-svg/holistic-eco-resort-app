@@ -173,9 +173,10 @@ test('My Stays hides prepared, rejected and uncertain durable attempts', async (
   assert.equal(response.status, 200); assert.deepEqual(body.bookings.map(x => x.referenceId), ['TEST-success']);
 });
 
-test('orchestration has no default transport and live invoice route stays disconnected', () => {
+test('orchestration has no default transport and route wiring remains in the guarded handler', () => {
   const source = readFileSync(new URL('./invoiceOrchestration.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /process\.env|createGuestHistoryDynamoTransport|postToSimplotel|SIMPLOTEL_ACCESS_TOKEN/);
   const route = readFileSync(new URL('../../app/api/simplotel/booking/send-invoice/route.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(route, /invoiceOrchestration|createAuthenticatedInvoiceOrchestrator|DynamoGuestBookingRepository/);
+  assert.match(route, /createSendInvoiceHandler/);
 });

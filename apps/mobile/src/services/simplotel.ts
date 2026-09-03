@@ -1,4 +1,6 @@
 import { getRoomMedia } from "../data/roomMedia";
+import "./cognitoAuth";
+import { fetchAuthSession } from "aws-amplify/auth";
 
 const SIMPLOTEL_API_BASE_URL = "http://192.168.1.100:3000";
 
@@ -305,11 +307,14 @@ export const simplotel = {
     guest: BookingGuestDetails;
     submissionId: string;
   }): Promise<PaymentLinkResponse> {
+    const session = await fetchAuthSession();
+    const accessToken = session.tokens?.accessToken;
+    if (!accessToken) throw new Error("Please sign in before creating a payment link.");
     const response = await fetch(
       `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking/send-invoice`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken.toString()}` },
         body: JSON.stringify({
           ...bookingRequestBody(input),
           submissionId: input.submissionId,

@@ -70,26 +70,24 @@ test("full-online flow calls send-invoice and never book", () => {
     join(repositoryRoot, "apps", "mobile", "src", "services", "simplotel.ts"),
     "utf8"
   );
-  const guardIndex = invoiceRoute.indexOf(
+  const handlerSource = readFileSync(join(adminRoot, "lib", "simplotel", "sendInvoiceHandler.ts"), "utf8");
+  const guardIndex = handlerSource.indexOf(
     "requireBookingCreationEnabled(isFullOnlinePaymentEnabled())"
   );
-  assert.ok(guardIndex >= 0);
-  assert.ok(guardIndex < invoiceRoute.indexOf("voice-bot/availability"));
-  const authIndex = invoiceRoute.indexOf("requireInvoiceTestAuthorization(request.headers)");
-  assert.ok(authIndex > guardIndex);
-  assert.ok(authIndex < invoiceRoute.indexOf("await request.json()"));
-  assert.ok(authIndex < invoiceRoute.indexOf("voice-bot/availability"));
+  assert.equal(guardIndex, -1); // Dependencies are injected; exact wiring asserted below.
+  assert.match(handlerSource, /requireBookingCreationEnabled\(deps\.enabled\(\)\)/);
+  assert.match(handlerSource, /deps\.authorizeTest\(request\.headers\)/);
+  assert.ok(handlerSource.indexOf("requireBookingCreationEnabled(deps.enabled())") < handlerSource.indexOf("deps.authenticate"));
   assert.doesNotMatch(invoiceRoute, /console\./);
-  assert.ok(guardIndex < invoiceRoute.indexOf('endpoint: "send-invoice"'));
-  assert.doesNotMatch(invoiceRoute, /endpoint: "book"/);
+  assert.match(invoiceRoute, /enabled: isFullOnlinePaymentEnabled/);
+  assert.match(invoiceRoute, /authorizeTest: requireInvoiceTestAuthorization/);
+  assert.match(invoiceRoute, /endpoint: 'send-invoice'/);
+  assert.doesNotMatch(invoiceRoute, /endpoint: ['"]book['"]/);
   assert.match(mobileService, /api\/simplotel\/booking\/send-invoice/);
   assert.doesNotMatch(mobileService, /api\/simplotel\/booking[`"']/);
-  const holdIndex = invoiceRoute.indexOf("const inventoryHold = getInvoiceInventoryHold()");
-  assert.ok(holdIndex >= 0);
-  assert.ok(holdIndex < invoiceRoute.indexOf("voice-bot/availability"));
-  assert.ok(holdIndex < invoiceRoute.indexOf("await request.json()"));
-  assert.match(invoiceRoute, /buildFullOnlineInvoicePayload\(prepared.payload, inventoryHold\)/);
-  assert.match(invoiceRoute, /buildPaymentLinkResult\(confirmation\)/);
+  assert.match(invoiceRoute, /inventoryHold: getInvoiceInventoryHold/);
+  assert.match(invoiceRoute, /buildFullOnlineInvoicePayload\(core, hold\)/);
+  assert.match(handlerSource, /buildPaymentLinkResult/);
   assert.doesNotMatch(mobileService, /holdInventory/);
 });
 
