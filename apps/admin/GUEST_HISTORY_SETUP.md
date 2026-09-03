@@ -6,10 +6,19 @@ are accepted as authorization. Missing/invalid tokens receive 401; employee-only
 accounts receive 403. Configuration/repository failures return 503. Responses
 are private and no-store. Tokens, records and provider errors are never logged.
 
-## Server configuration (not set by this change)
+## Server configuration
 
 - `GUEST_HISTORY_COGNITO_USER_POOL_ID`: the existing approved Cognito pool ID.
 - `GUEST_HISTORY_COGNITO_CLIENT_ID`: the existing approved mobile client ID.
+- `AWS_REGION=eu-north-1`
+- `GUEST_HISTORY_DYNAMODB_TABLE=holistic-eco-resort-guest-bookings-dev`
+
+Supply these through the backend environment (a local process environment is
+sufficient); never mobile configuration. No environment files or credentials are
+committed. Use the existing temporary AWS login/provider chain locally and a
+least-privilege execution role when deployed. History retrieval needs Query on
+the configured table, not write permissions. Missing/invalid configuration or
+expired/unavailable AWS credentials fails closed with 503, not a false empty list.
 
 These are public identifiers, not credentials. Use the same values as the mobile
 configuration. Region/issuer/JWKS location are derived from the pool ID, never
@@ -24,16 +33,21 @@ the automated tests: tests generate ephemeral local RSA keys and prohibit networ
 
 ## Data and ownership
 
-Successful response: `{ "bookings": [] }` until a trusted adapter exists.
-The route intentionally imports an empty repository. Upcoming/past example stays
+Successful response for an owner with no stored records: `{ "bookings": [] }`.
+The route uses `guestHistoryReadRepository`, a lazy read-only facade over the
+tested SDK transport/repository. It exposes only `listOwned`; authentication and
+query-parameter rejection happen before configuration, credential resolution or
+DynamoDB access. The client is reused per server process; results are not cached.
+Only owner-partition Query operations occur; no scans, writes or ingestion.
+Upcoming/past example stays
 exist ONLY in `lib/guestHistory/guestHistory.test.ts`, with fictional users and
 references; they cannot be enabled via an environment switch or client parameter.
 
 `OwnedBookingRecord` links `(issuer, sub, propertyId)` to a summary and optional
 Simplotel identifiers. Future repository queries must include all ownership keys.
 The handler also filters by these keys and projects only allowed summary fields.
-No email matching, booking-reference claiming, persistent database or ingestion
-is implemented. A normal guest needs no Guests group; employee-only accounts are
+No email matching, booking-reference claiming or ingestion is implemented.
+A normal guest needs no Guests group; employee-only accounts are
 denied, consistent with the current mobile policy.
 
 Dates use YYYY-MM-DD in the contract; the existing mobile history renderer uses
@@ -69,13 +83,13 @@ each request, define a trusted attribute check before real-data rollout.
 Run `npm run test:guest-history`. These are offline mock tests, not proof of a
 deployed Cognito connection or live booking-history availability.
 
-## Local-tested DynamoDB repository foundation (not activated)
+## DynamoDB repository foundation (read retrieval activated)
 
 `DynamoGuestBookingRepository` implements the unchanged `GuestBookingRepository`.
 It requires an explicitly injected `BookingDocumentClient` and table name. There
-is no default client, table, environment activation switch or route connection.
-The explicit SDK transport factory described below is not activated. The production route STILL
-uses the empty repository; My Stays remains unchanged. The in-memory fake exists
+is no default client or table inside the adapter. The route's server read facade
+constructs the SDK transport lazily from the configuration above. Write methods
+remain disconnected from all live routes, including booking/payment. The in-memory fake exists
 only in `dynamoRepository.test.ts`, never in production code.
 
 The port uses DynamoDB DocumentClient-shaped Get, Query and TransactWrite inputs.
@@ -116,23 +130,25 @@ is relied on for uniqueness. Invoice creation leaves booking/payment pending.
 There is intentionally no method to mark paid/confirmed or synchronize cancellation:
 trusted Simplotel confirmation/reconciliation capabilities must be documented first.
 
-Before real deployment: test the AWS SDK transport against a real DynamoDB service,
-provision encryption/backups and least-privilege backend IAM, define retention,
-revocation/audit requirements, and approve activation separately. Future invoice
+A controlled synthetic SDK write/read/isolation/idempotency test against the
+development table passed and its records were deleted; the table was empty afterward.
+Before production personal-data deployment: verify least-privilege backend IAM,
+encryption/backups, retention and revocation/audit requirements. Future invoice
 integration must authenticate Cognito ownership and persist the attempt BEFORE
 external execution. Current operator test authorization is not guest ownership.
 No transaction spans Simplotel and DynamoDB: unknown external outcomes require
 reconciliation, not replay. This test foundation does not claim exactly-once
 external execution or process-persistent storage in the local fake.
 
-## AWS SDK transport (explicit construction only; live route disconnected)
+## AWS SDK transport (read-only route connection)
 
 `dynamoTransport.ts` uses pinned AWS SDK v3 DynamoDB and document-client packages.
 `readGuestHistoryDynamoConfig()` requires `AWS_REGION` and
 `GUEST_HISTORY_DYNAMODB_TABLE`, validates them without echoing values in errors,
-and performs no I/O. Suggested future development configuration is region
+and performs no I/O. Approved development configuration is region
 `eu-north-1`, table `holistic-eco-resort-guest-bookings-dev`. No environment files
-are changed. Setting these variables alone does NOT activate the repository.
+are changed. The authenticated history route now uses this configuration for reads;
+it does not enable booking/payment execution or DynamoDB writes.
 
 `createGuestHistoryDynamoTransport(config)` constructs a client and repository
 only when explicitly called. It does not run queries on construction/import.
@@ -166,5 +182,8 @@ through an in-process request handler. It never uses real credentials, profiles,
 metadata services, sockets or AWS resources. Wire responses/conditional semantics
 are mocked, not a running DynamoDB Local service. Existing local repository tests
 remain unchanged. Passing tests proves the SDK wire contract, NOT IAM permissions,
-table provisioning, real service validation or production readiness. A controlled
-service integration test and separate activation approval remain necessary.
+table provisioning, real service validation or production readiness. The completed
+synthetic service test is separate evidence; production ingestion and deployment
+still require separate approval. Route/facade tests also verify authenticated empty
+results, invalid-token rejection, configuration failure, cross-owner isolation and
+Query-only SDK operations using local mocks.

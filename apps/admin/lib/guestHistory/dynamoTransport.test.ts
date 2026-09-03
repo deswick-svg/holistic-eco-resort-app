@@ -5,6 +5,8 @@ import test from 'node:test';
 import { createGuestHistoryDynamoTransport, readGuestHistoryDynamoConfig } from './dynamoTransport.ts';
 import { BookingStorageConflict } from './dynamoRepository.ts';
 import type { BookingDraft } from './persistentModel.ts';
+import { createGuestHistoryReadRepository } from './readRepository.ts';
+import { createMyBookingsHandler } from './handler.ts';
 
 globalThis.fetch = async () => { throw new Error('Live network forbidden'); };
 type AV = { S?: string; N?: string; M?: Record<string, AV>; L?: AV[] };
@@ -87,7 +89,7 @@ function setup() {
   });
   return { db, create, providerCalls: () => providerCalls };
 }
-test('configuration fails closed; factory is lazy; live route remains disconnected', () => {
+test('configuration fails closed; factory is lazy; live route exposes only the read facade', () => {
   for (const env of [{}, { AWS_REGION: 'eu-north-1' }, { AWS_REGION: 'invalid', GUEST_HISTORY_DYNAMODB_TABLE: 'test' }, { AWS_REGION: 'eu-north-1', GUEST_HISTORY_DYNAMODB_TABLE: ' ' }]) {
     assert.throws(() => readGuestHistoryDynamoConfig(env), /configuration/);
   }
@@ -95,7 +97,7 @@ test('configuration fails closed; factory is lazy; live route remains disconnect
   const s = setup(); const transport = s.create();
   assert.equal(s.providerCalls(), 0); assert.equal(s.db.calls.length, 0); transport.destroy();
   const route = readFileSync(new URL('../../app/api/my-bookings/route.ts', import.meta.url), 'utf8');
-  assert.match(route, /repository: emptyGuestBookingRepository/);
+  assert.match(route, /repository: guestHistoryReadRepository/);
   assert.doesNotMatch(route, /dynamoTransport|createGuestHistoryDynamoTransport/);
 });
 test('SDK marshals transaction conditions/nested snapshots and unmarshals consistent owner reads', async () => {
@@ -168,5 +170,35 @@ test('transport rejects table substitution before signing or sending', async () 
   try {
     await assert.rejects(t.client.get({ TableName: 'wrong-table', Key: { pk: 'test', sk: 'test' }, ConsistentRead: true }), /table mismatch/);
     assert.equal(s.providerCalls(), 0); assert.equal(s.db.calls.length, 0);
+  } finally { t.destroy(); }
+});
+
+test('history handler through SDK read facade only queries the authenticated owner partition', async () => {
+  const s = setup(); const t = s.create();
+  try {
+    // Seed only the in-process wire fake. No AWS writes or real credentials.
+    await t.repository.begin(identity, 7849, key, draft());
+    await t.repository.begin(identity, 999, key, draft());
+    s.db.calls.length = 0;
+    const repository = createGuestHistoryReadRepository(
+      () => ({ region: 'eu-north-1', table: 'local-test-bookings' }), () => t,
+    );
+    for (const [owner, expected] of [[identity, [draft().summary]], [{ ...identity, sub: 'other-test-guest' }, []]] as const) {
+      // Signed-token validation is separately exercised in guestHistory.test.ts.
+      const handler = createMyBookingsHandler({ authenticate: async () => owner, repository });
+      const response = await handler(new Request('http://localhost/api/my-bookings'));
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { bookings: expected });
+      for (const query of ['sub', 'email', 'ownerId', 'propertyId', 'pk', 'sk']) {
+        assert.equal((await handler(new Request(`http://localhost/api/my-bookings?${query}=other`))).status, 400);
+      }
+    }
+    assert.equal(s.db.calls.length, 2);
+    assert.notDeepEqual(s.db.calls[0].body.ExpressionAttributeValues, s.db.calls[1].body.ExpressionAttributeValues);
+    for (const call of s.db.calls) {
+      assert.equal(call.operation, 'Query');
+      assert.equal(call.body.TableName, 'local-test-bookings');
+      assert.equal(call.body.ConsistentRead, true);
+    }
   } finally { t.destroy(); }
 });

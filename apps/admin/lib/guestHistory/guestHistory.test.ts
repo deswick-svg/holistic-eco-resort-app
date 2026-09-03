@@ -8,6 +8,8 @@ import { createMyBookingsHandler } from './handler.ts';
 import { emptyGuestBookingRepository } from './model.ts';
 import type { OwnedBookingRecord } from './model.ts';
 import { GET } from '../../app/api/my-bookings/route.ts';
+import { createGuestHistoryReadRepository } from './readRepository.ts';
+import { readGuestHistoryDynamoConfig } from './dynamoTransport.ts';
 
 // TEST ONLY: ephemeral local signing keys; no Cognito users, tokens or bookings.
 globalThis.fetch = async () => { throw new Error('Live network forbidden'); };
@@ -113,7 +115,7 @@ test('repository gets server-derived identity/property and failures reveal no de
   assert.deepEqual(await response.json(), { error: { code: 'HISTORY_UNAVAILABLE' } });
 });
 
-test('production adapter is empty; route has no mock, Simplotel or authentication bypass', async () => {
+test('production route uses read facade with no mock, Simplotel or authentication bypass', async () => {
   const empty = createMyBookingsHandler({ authenticate, repository: emptyGuestBookingRepository });
   assert.deepEqual(await (await empty(request())).json(), { bookings: [] });
   assert.equal((await GET(new Request('http://localhost/api/my-bookings'))).status, 401);
@@ -129,6 +131,49 @@ test('production adapter is empty; route has no mock, Simplotel or authenticatio
   }
   const source = readFileSync(new URL('../../app/api/my-bookings/route.ts', import.meta.url), 'utf8');
   assert.match(source, /authenticate: authenticateGuest/);
-  assert.match(source, /repository: emptyGuestBookingRepository/);
+  assert.match(source, /repository: guestHistoryReadRepository/);
   assert.doesNotMatch(source, /fixture|testVerifier|simplotel/i);
+});
+
+test('read facade is lazy, authenticates before configuration, and returns private empty history', async () => {
+  let configured = 0;
+  let queries = 0;
+  const repository = createGuestHistoryReadRepository(() => {
+    configured++;
+    return readGuestHistoryDynamoConfig({ AWS_REGION: 'eu-north-1', GUEST_HISTORY_DYNAMODB_TABLE: 'holistic-eco-resort-guest-bookings-dev' });
+  }, config => {
+    assert.deepEqual(config, { region: 'eu-north-1', table: 'holistic-eco-resort-guest-bookings-dev' });
+    return { repository: { async listOwned(identity, property) {
+      queries++;
+      assert.deepEqual(identity, { issuer, sub: 'test-guest-a' });
+      assert.equal(property, 7849);
+      return [];
+    } } };
+  });
+  assert.deepEqual(Object.keys(repository), ['listOwned']);
+  const read = createMyBookingsHandler({ authenticate, repository });
+  assert.equal(configured, 0);
+  assert.equal((await read(new Request('http://localhost/api/my-bookings'))).status, 401);
+  assert.equal((await read(request('bad'))).status, 401);
+  assert.equal(configured, 0);
+  for (let i = 0; i < 2; i++) {
+    const response = await read(request());
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { bookings: [] });
+    assert.match(response.headers.get('cache-control')!, /private, no-store/);
+    assert.equal(response.headers.get('vary'), 'Authorization');
+  }
+  assert.equal(configured, 1);
+  assert.equal(queries, 2);
+});
+
+test('read facade missing/invalid server configuration fails closed without creating a client', async () => {
+  for (const env of [{}, { AWS_REGION: 'eu-north-1' }, { AWS_REGION: 'invalid', GUEST_HISTORY_DYNAMODB_TABLE: 'table' }]) {
+    const repository = createGuestHistoryReadRepository(() => readGuestHistoryDynamoConfig(env), () => {
+      assert.fail('must not construct transport');
+    });
+    const response = await createMyBookingsHandler({ authenticate, repository })(request());
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: { code: 'HISTORY_UNAVAILABLE' } });
+  }
 });

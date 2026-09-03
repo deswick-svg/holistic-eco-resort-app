@@ -159,9 +159,9 @@ test('transport failures fail closed; defensive reads reject overbroad or corrup
   const item = [...db.items.values()][0]; item.record!.owner = other;
   await assert.rejects(repo().listOwned(owner, 7849), /ownership/);
 });
-test('production route remains empty; adapter has no default AWS transport or execution wiring', () => {
+test('production route uses read facade; adapter has no default AWS transport or execution wiring', () => {
   const route = readFileSync(new URL('../../app/api/my-bookings/route.ts', import.meta.url), 'utf8');
-  assert.match(route, /repository: emptyGuestBookingRepository/);
+  assert.match(route, /repository: guestHistoryReadRepository/);
   assert.doesNotMatch(route, /DynamoGuestBookingRepository/);
   const source = readFileSync(new URL('./dynamoRepository.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /fetch\(|process\.env|@aws-sdk|send-invoice|endpoint:|console\./);
