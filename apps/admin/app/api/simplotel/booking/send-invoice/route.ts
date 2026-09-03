@@ -1,6 +1,6 @@
 import { authenticateGuest } from '../../../../../lib/guestHistory/cognito.ts';
 import { guestHistoryWriteRepository } from '../../../../../lib/guestHistory/writeRepository.ts';
-import { requireInvoiceTestAuthorization } from '../../../../../lib/simplotel/invoiceTestAuthorization.ts';
+import { requireServerControlledInvoiceTestAuthorization } from '../../../../../lib/simplotel/invoiceTestAuthorization.ts';
 import { buildFullOnlineInvoicePayload, getInvoiceInventoryHold } from '../../../../../lib/simplotel/bookingPreparation.ts';
 import { BookingExecutionError, buildPaymentLinkResult, isFullOnlinePaymentEnabled, postToSimplotel } from '../../../../../lib/simplotel/bookingExecution.ts';
 import { classifyProviderError, createSendInvoiceHandler } from '../../../../../lib/simplotel/sendInvoiceHandler.ts';
@@ -9,7 +9,7 @@ const HOTEL_ID = 7849;
 
 export const POST = createSendInvoiceHandler({
   enabled: isFullOnlinePaymentEnabled,
-  authorizeTest: requireInvoiceTestAuthorization,
+  authorizeTest: requireServerControlledInvoiceTestAuthorization,
   inventoryHold: getInvoiceInventoryHold,
   accessToken: () => process.env.SIMPLOTEL_ACCESS_TOKEN,
   authenticate: authenticateGuest,

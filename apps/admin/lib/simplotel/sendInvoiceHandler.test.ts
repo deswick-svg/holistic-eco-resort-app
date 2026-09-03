@@ -6,6 +6,7 @@ import { GuestHistoryAuthError } from '../guestHistory/cognito.ts';
 import { BookingStorageConflict } from '../guestHistory/dynamoRepository.ts';
 import type { PersistentBookingRecord, ProcessingState } from '../guestHistory/persistentModel.ts';
 import { createSendInvoiceHandler } from './sendInvoiceHandler.ts';
+import { requireServerControlledInvoiceTestAuthorization } from './invoiceTestAuthorization.ts';
 import { POST as defaultPost } from '../../app/api/simplotel/booking/send-invoice/route.ts';
 import type { SimplotelAvailabilityResponse } from './bookingPreparation.ts';
 
@@ -47,13 +48,13 @@ class MemoryLifecycleRepository {
     this.records.set(key, next); this.events.push(state); return structuredClone(next);
   }
 }
-function request(requestBody: unknown = body) {
+function request(requestBody: unknown = body, extraHeaders: Record<string, string> = {}) {
   return new Request('http://localhost/api/simplotel/booking/send-invoice', { method: 'POST',
-    headers: { Authorization: 'Bearer MOCKED-ACCESS-TOKEN' }, body: JSON.stringify(requestBody) });
+    headers: { Authorization: 'Bearer MOCKED-ACCESS-TOKEN', ...extraHeaders }, body: JSON.stringify(requestBody) });
 }
 function setup(overrides: Partial<Parameters<typeof createSendInvoiceHandler>[0]> = {}) {
   const repository = new MemoryLifecycleRepository(); let providerCalls = 0; let authCalls = 0;
-  const handler = createSendInvoiceHandler({ enabled: () => true, authorizeTest: () => {},
+  const handler = createSendInvoiceHandler({ enabled: () => true, authorizeTest: identity => assert.deepEqual(identity, owner),
     inventoryHold: () => ({ enabled: true, value: 30, unit: 'MINUTES' }), accessToken: () => 'mock-server-token',
     authenticate: async () => { authCalls++; return owner; }, repository,
     revalidate: async () => { repository.events.push('revalidated'); return availability; },
@@ -99,10 +100,27 @@ test('route rejects conflicting and identity-like client data', async () => {
   assert.equal((await setup().handler(request({ ...body, sub: 'attacker' }))).status, 400);
 });
 
+test('client headers cannot supply or bypass server-controlled guest authorization', async () => {
+  const environment = {
+    SIMPLOTEL_INVOICE_TEST_SECRET: 'a'.repeat(32),
+    SIMPLOTEL_INVOICE_TEST_GUEST_SUB: 'authorized-guest',
+    AWS_REGION: 'eu-north-1',
+    GUEST_HISTORY_COGNITO_USER_POOL_ID: 'eu-north-1_lszbPmAvq',
+  };
+  const s = setup({ authorizeTest: identity => requireServerControlledInvoiceTestAuthorization(identity, environment) });
+  const response = await s.handler(request(body, {
+    'X-Simplotel-Test-Authorization': environment.SIMPLOTEL_INVOICE_TEST_SECRET,
+    'X-Guest-Sub': environment.SIMPLOTEL_INVOICE_TEST_GUEST_SUB,
+  }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(s.repository.events, []);
+  assert.equal(s.providerCalls(), 0);
+});
+
 test('default route wiring uses guarded auth/Dynamo/provider adapters and mobile sends only Cognito bearer auth', () => {
   const route = readFileSync(new URL('../../app/api/simplotel/booking/send-invoice/route.ts', import.meta.url), 'utf8');
   assert.match(route, /authenticate: authenticateGuest/); assert.match(route, /repository: guestHistoryWriteRepository/);
-  assert.match(route, /enabled: isFullOnlinePaymentEnabled/); assert.match(route, /authorizeTest: requireInvoiceTestAuthorization/);
+  assert.match(route, /enabled: isFullOnlinePaymentEnabled/); assert.match(route, /authorizeTest: requireServerControlledInvoiceTestAuthorization/);
   assert.match(route, /endpoint: 'send-invoice'/); assert.doesNotMatch(route, /endpoint: 'book'/);
   const mobile = readFileSync(new URL('../../../mobile/src/services/simplotel.ts', import.meta.url), 'utf8');
   assert.match(mobile, /fetchAuthSession/); assert.match(mobile, /Authorization: `Bearer \$\{accessToken\.toString\(\)\}`/);

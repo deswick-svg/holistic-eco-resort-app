@@ -76,11 +76,11 @@ test("full-online flow calls send-invoice and never book", () => {
   );
   assert.equal(guardIndex, -1); // Dependencies are injected; exact wiring asserted below.
   assert.match(handlerSource, /requireBookingCreationEnabled\(deps\.enabled\(\)\)/);
-  assert.match(handlerSource, /deps\.authorizeTest\(request\.headers\)/);
+  assert.match(handlerSource, /deps\.authorizeTest\(identity\)/);
   assert.ok(handlerSource.indexOf("requireBookingCreationEnabled(deps.enabled())") < handlerSource.indexOf("deps.authenticate"));
   assert.doesNotMatch(invoiceRoute, /console\./);
   assert.match(invoiceRoute, /enabled: isFullOnlinePaymentEnabled/);
-  assert.match(invoiceRoute, /authorizeTest: requireInvoiceTestAuthorization/);
+  assert.match(invoiceRoute, /authorizeTest: requireServerControlledInvoiceTestAuthorization/);
   assert.match(invoiceRoute, /endpoint: 'send-invoice'/);
   assert.doesNotMatch(invoiceRoute, /endpoint: ['"]book['"]/);
   assert.match(mobileService, /api\/simplotel\/booking\/send-invoice/);

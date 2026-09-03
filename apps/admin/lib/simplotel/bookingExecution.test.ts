@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import {
   InvoiceTestAuthorizationError,
   requireInvoiceTestAuthorization,
+  requireServerControlledInvoiceTestAuthorization,
 } from "./invoiceTestAuthorization.ts";
 import {
   BookingExecutionError,
@@ -82,6 +83,37 @@ test("controlled invoice requires both execution and operator authorization", as
   assert.deepEqual(results[0], results[1]);
   assert.equal(buildPaymentLinkResult(results[0]).bookingStatus, "UNCONFIRMED");
   assert.equal(buildPaymentLinkResult(results[0]).paymentStatus, "PAYMENT_PENDING");
+});
+
+test("server-controlled authorization is bound to one verified Cognito guest", () => {
+  const secret = randomBytes(32).toString("hex");
+  const environment = {
+    SIMPLOTEL_INVOICE_TEST_SECRET: secret,
+    SIMPLOTEL_INVOICE_TEST_GUEST_SUB: "test-guest-sub",
+    AWS_REGION: "eu-north-1",
+    GUEST_HISTORY_COGNITO_USER_POOL_ID: "eu-north-1_lszbPmAvq",
+  };
+  const authorized = {
+    issuer: "https://cognito-idp.eu-north-1.amazonaws.com/eu-north-1_lszbPmAvq",
+    sub: "test-guest-sub",
+  };
+  assert.doesNotThrow(() => requireServerControlledInvoiceTestAuthorization(authorized, environment));
+  for (const identity of [
+    { ...authorized, sub: "another-guest" },
+    { ...authorized, issuer: "https://cognito-idp.eu-north-1.amazonaws.com/another-pool" },
+  ]) assert.throws(
+    () => requireServerControlledInvoiceTestAuthorization(identity, environment),
+    InvoiceTestAuthorizationError
+  );
+  for (const missing of [
+    "SIMPLOTEL_INVOICE_TEST_SECRET",
+    "SIMPLOTEL_INVOICE_TEST_GUEST_SUB",
+    "AWS_REGION",
+    "GUEST_HISTORY_COGNITO_USER_POOL_ID",
+  ] as const) assert.throws(
+    () => requireServerControlledInvoiceTestAuthorization(authorized, { ...environment, [missing]: undefined }),
+    InvoiceTestAuthorizationError
+  );
 });
 
 test("invoice timeout aborts a stalled fetch or response body without retry", async () => {

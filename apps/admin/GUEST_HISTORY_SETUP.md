@@ -223,8 +223,12 @@ was separately approved; external execution remains independently disabled.
 The send-invoice route now delegates to `createSendInvoiceHandler` and the durable
 orchestrator. External execution remains disabled unless the pre-existing
 `SIMPLOTEL_BOOKING_ENABLED=true` capability and server-only invoice-test
-authorization both pass. These checks occur before Cognito verification, storage,
-availability or provider I/O. No flag or secret was changed by this connection.
+authorization both pass. The capability check occurs before Cognito verification,
+storage, availability or provider I/O. After Cognito verification, authorization
+requires `SIMPLOTEL_INVOICE_TEST_SECRET` and an exact server-configured
+`SIMPLOTEL_INVOICE_TEST_GUEST_SUB`; the expected issuer is derived from `AWS_REGION`
+and `GUEST_HISTORY_COGNITO_USER_POOL_ID`. Mobile clients cannot supply or override
+any of those values. No flag or secret is enabled by the application.
 
 When enabled for a separately approved test, the route verifies the Cognito access
 token and uses only its issuer/sub with server property 7849. The mobile sends that

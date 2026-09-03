@@ -12,7 +12,7 @@ type Repository = Pick<DynamoGuestBookingRepository, 'begin' | 'advance' | 'getO
 type Identifiers = { bookingId: string; quoteId: string; invoiceId: number };
 export type SendInvoiceDependencies = {
   enabled: () => boolean;
-  authorizeTest: (headers: Headers) => void;
+  authorizeTest: (identity: GuestIdentity) => void;
   inventoryHold: () => Hold;
   accessToken: () => string | undefined;
   authenticate: (request: Request) => Promise<GuestIdentity>;
@@ -29,15 +29,20 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 export function createSendInvoiceHandler(deps: SendInvoiceDependencies) {
   return async (request: Request): Promise<Response> => {
     try {
-      // Guards must remain before authentication, storage, availability and provider I/O.
+      // Capability/configuration guards remain before authentication, storage,
+      // availability and provider I/O. Guest-specific authorization follows
+      // verified Cognito identity and still precedes every write/external call.
       requireBookingCreationEnabled(deps.enabled());
-      deps.authorizeTest(request.headers);
       const hold = deps.inventoryHold();
       const accessToken = deps.accessToken();
       if (!accessToken) return json({ error: { code: 'SERVER_CONFIGURATION', message: 'Invoice creation is unavailable.' } }, 500);
 
       const orchestrate = createAuthenticatedInvoiceOrchestrator({
-        authenticate: deps.authenticate,
+        authenticate: async authenticatedRequest => {
+          const identity = await deps.authenticate(authenticatedRequest);
+          deps.authorizeTest(identity);
+          return identity;
+        },
         repository: deps.repository,
         validateAndPrepare: async (body, propertyId) => {
           const bookingRequest = validateBookingPreparationRequest(body);
