@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test:guest-history": "node --experimental-strip-types --test lib/guestHistory/guestHistory.test.ts lib/guestHistory/dynamoRepository.test.ts",
+    "test:guest-history": "node --experimental-strip-types --test lib/guestHistory/guestHistory.test.ts lib/guestHistory/dynamoRepository.test.ts lib/guestHistory/dynamoTransport.test.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -14,6 +14,8 @@
     "test:booking-safety": "node --experimental-strip-types --test lib/simplotel/bookingSafety.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1125.0",
+    "@aws-sdk/lib-dynamodb": "3.1125.0",
     "aws-jwt-verify": "5.2.1",
     "next": "16.3.3",
     "react": "19.2.8",

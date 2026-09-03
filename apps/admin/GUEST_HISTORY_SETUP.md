@@ -73,13 +73,13 @@ deployed Cognito connection or live booking-history availability.
 
 `DynamoGuestBookingRepository` implements the unchanged `GuestBookingRepository`.
 It requires an explicitly injected `BookingDocumentClient` and table name. There
-is no AWS SDK dependency, default client, AWS credential configuration, table,
-environment activation switch or route connection. The production route STILL
+is no default client, table, environment activation switch or route connection.
+The explicit SDK transport factory described below is not activated. The production route STILL
 uses the empty repository; My Stays remains unchanged. The in-memory fake exists
 only in `dynamoRepository.test.ts`, never in production code.
 
 The port uses DynamoDB DocumentClient-shaped Get, Query and TransactWrite inputs.
-A future AWS wrapper must use real atomic TransactWrite operations, preserve
+The AWS wrapper must use real atomic TransactWrite operations, preserve
 conditional expressions and consistent reads, and propagate AWS errors without
 logging inputs. It must not emulate transactions with separate writes. Keys are
 `pk`/`sk` strings. Owner partition keys hash the tuple (issuer, sub, propertyId);
@@ -116,7 +116,7 @@ is relied on for uniqueness. Invoice creation leaves booking/payment pending.
 There is intentionally no method to mark paid/confirmed or synchronize cancellation:
 trusted Simplotel confirmation/reconciliation capabilities must be documented first.
 
-Before real deployment: supply/test an AWS SDK transport against DynamoDB,
+Before real deployment: test the AWS SDK transport against a real DynamoDB service,
 provision encryption/backups and least-privilege backend IAM, define retention,
 revocation/audit requirements, and approve activation separately. Future invoice
 integration must authenticate Cognito ownership and persist the attempt BEFORE
@@ -124,3 +124,47 @@ external execution. Current operator test authorization is not guest ownership.
 No transaction spans Simplotel and DynamoDB: unknown external outcomes require
 reconciliation, not replay. This test foundation does not claim exactly-once
 external execution or process-persistent storage in the local fake.
+
+## AWS SDK transport (explicit construction only; live route disconnected)
+
+`dynamoTransport.ts` uses pinned AWS SDK v3 DynamoDB and document-client packages.
+`readGuestHistoryDynamoConfig()` requires `AWS_REGION` and
+`GUEST_HISTORY_DYNAMODB_TABLE`, validates them without echoing values in errors,
+and performs no I/O. Suggested future development configuration is region
+`eu-north-1`, table `holistic-eco-resort-guest-bookings-dev`. No environment files
+are changed. Setting these variables alone does NOT activate the repository.
+
+`createGuestHistoryDynamoTransport(config)` constructs a client and repository
+only when explicitly called. It does not run queries on construction/import.
+Credentials remain lazy/provider-based: the default AWS SDK Node provider chain
+can use a future execution role. Do not place long-lived keys in environment
+files. No credentials, endpoint or table configuration is accepted from mobile.
+The factory ignores configured endpoint URL overrides and rejects attempts to
+use a different table through its port. Call `destroy()` when disposing it.
+
+GetCommand/QueryCommand preserve consistent reads, ownership partition conditions
+and pagination. TransactWriteCommand preserves atomic writes, conditions and
+CancellationReasons. SDK retries are explicitly disabled (`maxAttempts: 1`),
+including throttling/transport failures, to keep uncertain outcomes visible.
+No errors or request/response data are logged by this wrapper. Existing route
+error handling must continue to redact provider errors before returning to guests.
+
+Document marshalling keeps monetary decimal strings as strings and safe version,
+occupancy and invoice numbers as numbers. Undefined nested values are rejected,
+not silently removed. No class-instance conversion or empty-value coercion is
+enabled. The SDK generates a per-command transaction client token; it is not a
+replacement for durable owner-scoped submission keys and fingerprint checks.
+
+Contract differences handled: DynamoDB can return an empty LastEvaluatedKey map
+at the end of pagination (normalized to no cursor); AWS SDK retry defaults must
+not be inherited for uncertain submissions. The SDK deserializes transaction
+CancellationReasons in the shape used by the existing conflict handling.
+
+`dynamoTransport.test.ts` exercises real SDK signing with ephemeral fictional
+material, marshalling, command serialization and response/error deserialization
+through an in-process request handler. It never uses real credentials, profiles,
+metadata services, sockets or AWS resources. Wire responses/conditional semantics
+are mocked, not a running DynamoDB Local service. Existing local repository tests
+remain unchanged. Passing tests proves the SDK wire contract, NOT IAM permissions,
+table provisioning, real service validation or production readiness. A controlled
+service integration test and separate activation approval remain necessary.
