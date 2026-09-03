@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test:guest-history": "node --experimental-strip-types --test lib/guestHistory/guestHistory.test.ts",
+    "test:guest-history": "node --experimental-strip-types --test lib/guestHistory/guestHistory.test.ts lib/guestHistory/dynamoRepository.test.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

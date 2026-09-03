@@ -68,3 +68,59 @@ each request, define a trusted attribute check before real-data rollout.
 
 Run `npm run test:guest-history`. These are offline mock tests, not proof of a
 deployed Cognito connection or live booking-history availability.
+
+## Local-tested DynamoDB repository foundation (not activated)
+
+`DynamoGuestBookingRepository` implements the unchanged `GuestBookingRepository`.
+It requires an explicitly injected `BookingDocumentClient` and table name. There
+is no AWS SDK dependency, default client, AWS credential configuration, table,
+environment activation switch or route connection. The production route STILL
+uses the empty repository; My Stays remains unchanged. The in-memory fake exists
+only in `dynamoRepository.test.ts`, never in production code.
+
+The port uses DynamoDB DocumentClient-shaped Get, Query and TransactWrite inputs.
+A future AWS wrapper must use real atomic TransactWrite operations, preserve
+conditional expressions and consistent reads, and propagate AWS errors without
+logging inputs. It must not emulate transactions with separate writes. Keys are
+`pk`/`sk` strings. Owner partition keys hash the tuple (issuer, sub, propertyId);
+submission sort keys are owner-scoped. Queries never scan. Pagination is consumed
+internally with a defensive bound; an ownership-bound public cursor is future work.
+
+Records include schema/version, internal UUID, ownership, provenance, submission
+key, server-computed canonical SHA-256 request fingerprint, timestamps, pending
+booking/payment status, stay dates, room/rate snapshots, daily prices, taxes,
+addons and penalties. Amounts are decimal strings with currency. Exact-shape
+validation rejects unexpected fields; never pass raw requests, provider responses,
+tokens, card details or credentials into this API. Text fields must contain only
+their intended trusted values. Snapshots have a conservative size limit; this
+bounded normalized model is not a lossless archive of every Simplotel field.
+
+`begin` requires a server-validated pending snapshot and identity already derived
+from verified Cognito authentication. It conditionally creates a durable item.
+Same key/fingerprint returns the existing record; different contents conflict.
+Fingerprints are immutable even when processing advances. These are internal
+idempotency keys, not undocumented Simplotel request fields.
+
+`advance` uses optimistic version conditions:
+`prepared -> dispatching -> invoice_created`, or
+`dispatching -> uncertain -> invoice_created` after trusted reconciliation.
+Only one worker can claim dispatch. There is no timeout-based reset, lease
+takeover, TTL deletion or automatic external retry. A recovered record is not
+permission to resubmit. Lost storage acknowledgement requires a consistent read:
+an accepted write may already exist. A prepared record can be claimed; dispatching
+and uncertain records require investigation. Database errors propagate closed.
+
+Attaching invoice identifiers atomically reserves a property/Simplotel booking-ID
+ownership marker; another owner OR attempt cannot claim that booking ID. No GSI
+is relied on for uniqueness. Invoice creation leaves booking/payment pending.
+There is intentionally no method to mark paid/confirmed or synchronize cancellation:
+trusted Simplotel confirmation/reconciliation capabilities must be documented first.
+
+Before real deployment: supply/test an AWS SDK transport against DynamoDB,
+provision encryption/backups and least-privilege backend IAM, define retention,
+revocation/audit requirements, and approve activation separately. Future invoice
+integration must authenticate Cognito ownership and persist the attempt BEFORE
+external execution. Current operator test authorization is not guest ownership.
+No transaction spans Simplotel and DynamoDB: unknown external outcomes require
+reconciliation, not replay. This test foundation does not claim exactly-once
+external execution or process-persistent storage in the local fake.
