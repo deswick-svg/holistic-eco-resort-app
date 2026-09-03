@@ -80,7 +80,10 @@ export class CognitoAuthCore {
     }
     // Self-registered verified users normally have no group. Employee-only accounts use staff login.
     if (groups.includes(this.config.employeeGroup) && !groups.includes(this.config.guestGroup)) return error('employee_account', 'Use Employee Login for this staff account.');
-    return { status: 'authenticated', guestId: id.sub };
+    if (typeof id.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(id.email)) {
+      return error('auth_failed', 'Your account email could not be verified. Please sign in again.');
+    }
+    return { status: 'authenticated', guestId: id.sub, email: id.email, emailVerified: true };
   }
   private async next(role: AuthRole, result: Awaited<ReturnType<AuthDriver['signIn']>>): Promise<AuthResult> {
     if (result.isSignedIn) { this.challengeRole = null; return this.authorize(role, false); }

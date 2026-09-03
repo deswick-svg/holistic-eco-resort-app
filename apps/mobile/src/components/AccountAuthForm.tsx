@@ -5,7 +5,12 @@ import type { GuestAuthProvider } from '../types/guestAuth';
 import { colors } from '../theme/colors';
 
 type Mode = 'signin' | 'signup' | 'verify' | 'code' | 'new_password' | 'forgot' | 'reset';
-export function AccountAuthForm({ provider, employee = false }: { provider: AccountAuthProvider; employee?: boolean }) {
+export function AccountAuthForm({ provider, employee = false, renderGuestAccount }: {
+  provider: AccountAuthProvider;
+  employee?: boolean;
+  renderGuestAccount?: (account: { email: string; emailVerified: true }, signOut: () => void, busy: boolean) => React.ReactNode;
+}) {
+  const [guestAccount, setGuestAccount] = useState<{ email: string; emailVerified: true } | null>(null);
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,6 +26,8 @@ export function AccountAuthForm({ provider, employee = false }: { provider: Acco
   const apply = (result: AuthResult) => {
     const allowed = employee ? result.status === 'authorized' : result.status === 'authenticated';
     setAuthorized(allowed);
+    setGuestAccount(!employee && result.status === 'authenticated'
+      ? { email: result.email, emailVerified: result.emailVerified } : null);
     setMessage('message' in result ? result.message ?? '' : allowed ? 'Secure sign-in completed.' : '');
     if (result.status === 'verification_required') setMode('verify');
     if (result.status === 'challenge_required') setMode(result.challenge === 'code' ? 'code' : 'new_password');
@@ -46,7 +53,7 @@ export function AccountAuthForm({ provider, employee = false }: { provider: Acco
     void restore();
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') void restore();
-      else { setPassword(''); setCode(''); setAuthorized(false); }
+      else { setPassword(''); setCode(''); setAuthorized(false); setGuestAccount(null); }
     });
     const timer = setInterval(() => { if (AppState.currentState === 'active') void restore(); }, 60_000);
     return () => { mounted.current = false; subscription.remove(); clearInterval(timer); };
@@ -92,6 +99,9 @@ export function AccountAuthForm({ provider, employee = false }: { provider: Acco
       <Text style={primary ? styles.buttonText : styles.linkText}>{label}</Text>
     </Pressable>
   );
+  if (!employee && authorized && guestAccount && renderGuestAccount) {
+    return <>{renderGuestAccount(guestAccount, () => void perform(() => provider.signOut()), busy)}</>;
+  }
   return <View>
     <Text style={styles.title}>{authorized ? (employee ? 'Employee identity verified' : 'You are signed in') : titles[mode]}</Text>
     <Text style={styles.intro}>{authorized ? 'Personal stay data and operational functions are not connected yet.' : 'Access is secured by Amazon Cognito. Passwords and verification codes are not saved on this device.'}</Text>

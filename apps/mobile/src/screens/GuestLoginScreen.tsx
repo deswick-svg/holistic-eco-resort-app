@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { guestAuth } from '../services/guestAuth';
 import { colors } from '../theme/colors';
 import { AccountAuthForm } from '../components/AccountAuthForm';
+import { MyAccountScreen } from './MyAccountScreen';
 
 export function GuestLoginScreen({ onBack }: { onBack: () => void }) {
   return (
@@ -52,7 +53,9 @@ export function GuestLoginScreen({ onBack }: { onBack: () => void }) {
               <Ionicons name="lock-closed-outline" size={29} color={colors.forest} />
             </View>
             <Text style={styles.formEyebrow}>SECURE ACCESS</Text>
-            <AccountAuthForm provider={guestAuth} />
+            <AccountAuthForm provider={guestAuth} renderGuestAccount={(account, signOut, busy) => (
+              <MyAccountScreen account={account} onSignOut={signOut} busy={busy} />
+            )} />
           </View>
 
           <View style={styles.accountBenefits}>

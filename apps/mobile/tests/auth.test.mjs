@@ -11,7 +11,7 @@ const issuer = `https://cognito-idp.${config.region}.amazonaws.com/${config.cogn
 function tokens(groups = []) {
   const common = { sub: 'mock-user', iss: issuer, exp: Date.now() / 1000 + 3600 };
   return {
-    id: { ...common, aud: config.cognitoClientId, token_use: 'id', email_verified: true },
+    id: { ...common, aud: config.cognitoClientId, token_use: 'id', email_verified: true, email: 'guest@example.com' },
     access: { ...common, client_id: config.cognitoClientId, token_use: 'access', 'cognito:groups': groups },
   };
 }
@@ -39,7 +39,7 @@ test('email-only beginSignIn remains compatible and sends no request', async () 
 });
 test('verified self-registered guest can sign in without a Guests group; result has no tokens', async () => {
   const { core, calls } = fixture();
-  assert.deepEqual(await core.beginSignIn('guest', credentials), { status: 'authenticated', guestId: 'mock-user' });
+  assert.deepEqual(await core.beginSignIn('guest', credentials), { status: 'authenticated', guestId: 'mock-user', email: 'guest@example.com', emailVerified: true });
   assert.deepEqual(calls[2], ['signIn', 'guest@example.com', credentials.password]);
 });
 test('guest credentials cannot authorize employee access', async () => {
@@ -48,6 +48,39 @@ test('guest credentials cannot authorize employee access', async () => {
     assert.equal((await core.beginSignIn('employee', credentials)).code, 'unauthorized_employee');
     assert.equal((await core.restoreSession('employee')).code, 'unauthorized_employee');
   }
+});
+
+test('My Account uses only the verified session email, including after restore', async () => {
+  const data = tokens();
+  data.id.email = 'verified-account@example.com';
+  data.id.privateClaim = 'must-not-reach-ui';
+  const { core } = fixture({ session: async () => data });
+  const expected = { status: 'authenticated', guestId: 'mock-user', email: data.id.email, emailVerified: true };
+  assert.deepEqual(await core.beginSignIn('guest', credentials), expected);
+  assert.deepEqual(await core.restoreSession('guest'), expected);
+  assert.equal((await core.signOut()).status, 'signed_out');
+});
+
+test('My Account fails closed for missing email, unverified email, or expired session', async () => {
+  for (const mutate of [t => { delete t.id.email; }, t => { t.id.email = ''; },
+    t => { t.id.email_verified = false; }, t => { t.id.exp = 1; }]) {
+    const data = tokens(); mutate(data);
+    const { core } = fixture({ session: async () => data });
+    const result = await core.restoreSession('guest');
+    assert.notEqual(result.status, 'authenticated');
+    assert.equal('email' in result, false);
+  }
+});
+
+test('My Account is gated by guest authorization and uses the existing locked sign-out flow', () => {
+  const form = readFileSync(new URL('../src/components/AccountAuthForm.tsx', import.meta.url), 'utf8');
+  const screen = readFileSync(new URL('../src/screens/MyAccountScreen.tsx', import.meta.url), 'utf8');
+  assert.match(form, /!employee && authorized && guestAccount && renderGuestAccount/);
+  assert.match(form, /renderGuestAccount\(guestAccount, \(\) => void perform\(\(\) => provider.signOut\(\)\), busy\)/);
+  assert.match(form, /setAuthorized\(false\); setGuestAccount\(null\)/);
+  assert.match(screen, /disabled=\{busy\}/);
+  assert.match(screen, /\{account.email\}/);
+  assert.doesNotMatch(screen, /AsyncStorage|fetch\(|idToken|accessToken|refreshToken/);
 });
 test('Employees membership is required and guest/staff roles remain distinct', async () => {
   const { core } = fixture({ session: async () => tokens(['Employees']) });

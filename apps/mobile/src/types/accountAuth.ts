@@ -1,7 +1,7 @@
 export type AuthRole = 'guest' | 'employee';
 export type AuthResult =
   | { status: 'interaction_required' }
-  | { status: 'authenticated'; guestId: string }
+  | { status: 'authenticated'; guestId: string; email: string; emailVerified: true }
   | { status: 'authorized'; employeeId: string }
   | { status: 'verification_required'; message: string }
   | { status: 'challenge_required'; challenge: 'code' | 'new_password'; message: string }
