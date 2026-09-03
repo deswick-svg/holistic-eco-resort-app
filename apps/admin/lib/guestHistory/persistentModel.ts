@@ -15,10 +15,13 @@ export type RoomSnapshot = {
   penalties: { description: string; amount?: Money }[];
 };
 export type BookingDraft = Pick<OwnedBookingRecord, 'summary' | 'provenance'> & {
+  guest: { name: string; email: string; phone: string };
+  /** Fresh, server-validated Simplotel selection used by the fingerprint. */
+  validatedSelection: { ratePlan: unknown; occupancy: unknown };
   rooms: RoomSnapshot[];
   totals?: { subtotal: Money; taxes: Money; total: Money };
 };
-export type ProcessingState = 'prepared' | 'dispatching' | 'uncertain' | 'invoice_created';
+export type ProcessingState = 'prepared' | 'dispatching' | 'uncertain' | 'provider_rejected' | 'invoice_created';
 export type PersistentBookingRecord = OwnedBookingRecord & BookingDraft & {
   schemaVersion: 1;
   recordId: string;
@@ -52,6 +55,15 @@ export const isoDate: Check = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$
 const timestamp: Check = v => typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 const money = shape({ amount: v => typeof v === 'string' && /^\d{1,12}(\.\d{1,4})?$/.test(v), currency: v => typeof v === 'string' && /^[A-Z]{3}$/.test(v) });
 const charge = shape({ name: text, amount: money });
+const json: Check = value => {
+  const visit = (v: unknown, depth: number): boolean => depth <= 20 &&
+    (v === null || ['string', 'boolean'].includes(typeof v) ||
+      (typeof v === 'number' && Number.isFinite(v)) ||
+      (Array.isArray(v) && v.length <= 366 && v.every(x => visit(x, depth + 1))) ||
+      (!!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length <= 100 &&
+        Object.entries(v).every(([k, x]) => k.length <= 200 && visit(x, depth + 1))));
+  return visit(value, 0);
+};
 const summary = shape({
   referenceId: text, guestName: text, roomType: text, checkInDate: isoDate, checkOutDate: isoDate,
   adults: positive, children: integer,
@@ -60,6 +72,8 @@ const summary = shape({
   stayState: oneOf('upcoming', 'current', 'past'),
 }, { total: money });
 const draftFields = {
+  guest: shape({ name: text, email: v => text(v) && /^\S+@\S+\.\S+$/.test(v as string), phone: v => text(v) && /^\+\d+$/.test(v as string) }),
+  validatedSelection: shape({ ratePlan: json, occupancy: json }),
   summary,
   provenance: oneOf('test_fixture', 'verified_backend'),
   rooms: list(shape({ roomTypeId: text, roomName: text, ratePlanId: text, ratePlanName: text,
@@ -76,7 +90,7 @@ export const validIdentifiers = shape({ bookingId: text, quoteId: text, invoiceI
 const recordShape = shape({ ...draftFields, schemaVersion: oneOf(1), recordId: text,
   owner: validIdentity, propertyId: positive, submissionKey: validSubmission,
   requestFingerprint: v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v),
-  processingState: oneOf('prepared', 'dispatching', 'uncertain', 'invoice_created'),
+  processingState: oneOf('prepared', 'dispatching', 'uncertain', 'provider_rejected', 'invoice_created'),
   version: positive, createdAt: timestamp, updatedAt: timestamp,
 }, { totals, simplotelIdentifiers: validIdentifiers });
 
@@ -90,6 +104,7 @@ export function assertDraft(value: unknown): asserts value is BookingDraft {
 export function assertRecord(value: unknown): asserts value is PersistentBookingRecord {
   if (!recordShape(value)) throw new Error('Invalid stored booking');
   const v = value as PersistentBookingRecord;
-  assertDraft({ summary: v.summary, provenance: v.provenance, rooms: v.rooms, ...(v.totals ? { totals: v.totals } : {}) });
+  assertDraft({ summary: v.summary, provenance: v.provenance, guest: v.guest,
+    validatedSelection: v.validatedSelection, rooms: v.rooms, ...(v.totals ? { totals: v.totals } : {}) });
   if ((v.processingState === 'invoice_created') !== !!v.simplotelIdentifiers) throw new Error('Invalid stored booking state');
 }

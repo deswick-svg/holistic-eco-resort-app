@@ -130,12 +130,14 @@ export class DynamoGuestBookingRepository implements GuestBookingRepository {
     const existing = await this.getOwned(identity, propertyId, submissionKey);
     if (!existing || existing.version !== expectedVersion) throw new BookingStorageConflict();
     const allowed: Record<ProcessingState, ProcessingState[]> = {
-      prepared: ['dispatching'], dispatching: ['uncertain', 'invoice_created'], uncertain: ['invoice_created'], invoice_created: [],
+      prepared: ['dispatching'], dispatching: ['uncertain', 'provider_rejected', 'invoice_created'],
+      uncertain: ['invoice_created'], provider_rejected: [], invoice_created: [],
     };
     if (!allowed[existing.processingState].includes(nextState)) throw new BookingStorageConflict();
     if (nextState === 'invoice_created' ? !validIdentifiers(identifiers) : identifiers !== undefined) throw new Error('Invalid invoice identifiers');
     const record: PersistentBookingRecord = structuredClone({ ...existing, processingState: nextState,
       version: existing.version + 1, updatedAt: this.now(), ...(identifiers ? { simplotelIdentifiers: identifiers } : {}),
+      ...(identifiers ? { summary: { ...existing.summary, referenceId: identifiers.bookingId } } : {}),
     });
     assertRecord(record);
     const key = keyFor(identity, propertyId, submissionKey);

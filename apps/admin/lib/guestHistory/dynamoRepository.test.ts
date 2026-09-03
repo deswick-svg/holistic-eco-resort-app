@@ -58,7 +58,9 @@ const key = 'test-submission-0001';
 const ids = { bookingId: 'TEST-BOOKING', quoteId: 'TEST-QUOTE', invoiceId: 1 };
 const money = (amount: string) => ({ amount, currency: 'INR' });
 function draft(): BookingDraft {
-  return { provenance: 'test_fixture', summary: { referenceId: 'TEST-ONLY', guestName: 'Fictional Guest', roomType: 'Test Room',
+  return { provenance: 'test_fixture', guest: { name: 'Fictional Guest', email: 'test@example.com', phone: '+910000000000' },
+  validatedSelection: { ratePlan: { id: 'TEST-RATE' }, occupancy: { id: 'TEST-OCCUPANCY' } },
+  summary: { referenceId: 'TEST-ONLY', guestName: 'Fictional Guest', roomType: 'Test Room',
     checkInDate: '2099-01-01', checkOutDate: '2099-01-02', adults: 2, children: 0,
     bookingStatus: 'pending', paymentStatus: 'pending', stayState: 'upcoming', total: money('112.00') },
   rooms: [{ roomTypeId: 'TEST-ROOM', roomName: 'Test Room', ratePlanId: 'TEST-RATE', ratePlanName: 'Test Rate', adults: 2, children: 0,
@@ -86,7 +88,7 @@ test('owner, issuer and property are isolated; queries paginate and handler proj
   assert.equal(await r.getOwned({ ...owner, sub: 'absent' }, 7849, key), undefined);
   const response = await createMyBookingsHandler({ authenticate: async () => owner, repository: r })(new Request('http://localhost/api/my-bookings'));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { bookings: [draft().summary, past.summary] });
+  assert.deepEqual(await response.json(), { bookings: [] });
 });
 test('concurrent duplicate begins are idempotent across adapter instances; changed snapshot conflicts', async () => {
   const { repo } = setup();

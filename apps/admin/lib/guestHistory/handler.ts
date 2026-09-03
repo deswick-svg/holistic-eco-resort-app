@@ -27,6 +27,9 @@ export function createMyBookingsHandler(dependencies: {
       const records = await dependencies.repository.listOwned(identity, propertyId);
       const bookings: BookingSummary[] = records
         .filter(record => record.owner.issuer === identity.issuer && record.owner.sub === identity.sub && record.propertyId === propertyId)
+        // Durable attempts are private workflow state until provider identifiers
+        // exist. Legacy/trusted projected records have no processingState.
+        .filter(record => !('processingState' in record) || record.processingState === 'invoice_created')
         .map(({ summary }) => ({
           referenceId: summary.referenceId, guestName: summary.guestName, roomType: summary.roomType,
           checkInDate: summary.checkInDate, checkOutDate: summary.checkOutDate,

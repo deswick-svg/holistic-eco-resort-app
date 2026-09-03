@@ -187,3 +187,33 @@ synthetic service test is separate evidence; production ingestion and deployment
 still require separate approval. Route/facade tests also verify authenticated empty
 results, invalid-token rejection, configuration failure, cross-owner isolation and
 Query-only SDK operations using local mocks.
+
+## Mock-only authenticated invoice orchestration (not activated)
+
+`invoiceOrchestration.ts` is a dependency-injected, server-only lifecycle service.
+It has no default Cognito verifier, DynamoDB transport, Simplotel client, environment
+reader or route registration. The live send-invoice route and mobile flow do not
+import it. Tests use fictional identities, an in-memory conditional document client
+and a mock provider; global fetch is disabled.
+
+The service authenticates before parsing booking input and derives ownership only
+from the injected authenticated `issuer` and `sub`. Property 7849 is a server
+constant. An exact root request shape rejects identity/property/key fields. Guest
+email and phone are booking snapshot data, never ownership. After injected fresh
+validation, the durable lifecycle is `prepared -> dispatching -> invoice_created`,
+`provider_rejected`, or `uncertain`. Only a successful conditional dispatch claim
+may call the provider. Recovered identifiers return without resubmission; rejected
+and uncertain attempts are terminal for automatic execution.
+
+The fingerprint includes owner/property (in the repository), normalized guest and
+stay data, totals, rooms, and complete freshly validated rate-plan/occupancy
+snapshots, including daily prices, taxes, addons and penalty data. Success atomically
+attaches booking/quote/invoice identifiers, reserves provider-booking ownership and
+updates the guest-safe reference. Booking and payment remain pending. My Stays hides
+durable workflow attempts other than `invoice_created`.
+
+A lost DynamoDB acknowledgement is recovered with a consistent read. If the
+provider may have succeeded but identifiers cannot be durably confirmed, the record
+is moved to uncertain where possible and the operation fails closed; the provider
+is never automatically retried. Connecting real Cognito, fresh preparation,
+DynamoDB and Simplotel adapters to a guarded route requires separate approval.

@@ -73,7 +73,9 @@ const key = 'test-submission-0001';
 const ids = { bookingId: 'TEST-BOOKING', quoteId: 'TEST-QUOTE', invoiceId: 1 };
 const money = { amount: '112.00', currency: 'INR' };
 function draft(): BookingDraft {
-  return { provenance: 'test_fixture', summary: { referenceId: 'TEST-ONLY', guestName: 'Fictional Guest', roomType: 'Test Room',
+  return { provenance: 'test_fixture', guest: { name: 'Fictional Guest', email: 'test@example.com', phone: '+910000000000' },
+  validatedSelection: { ratePlan: { id: 'TEST-RATE' }, occupancy: { id: 'TEST-OCCUPANCY' } },
+  summary: { referenceId: 'TEST-ONLY', guestName: 'Fictional Guest', roomType: 'Test Room',
     checkInDate: '2099-01-01', checkOutDate: '2099-01-02', adults: 2, children: 0,
     bookingStatus: 'pending', paymentStatus: 'pending', stayState: 'upcoming', total: money },
   rooms: [{ roomTypeId: 'TEST-ROOM', roomName: 'Test Room', ratePlanId: 'TEST-RATE', ratePlanName: 'Test Rate', adults: 2, children: 0,
@@ -183,7 +185,7 @@ test('history handler through SDK read facade only queries the authenticated own
     const repository = createGuestHistoryReadRepository(
       () => ({ region: 'eu-north-1', table: 'local-test-bookings' }), () => t,
     );
-    for (const [owner, expected] of [[identity, [draft().summary]], [{ ...identity, sub: 'other-test-guest' }, []]] as const) {
+    for (const [owner, expected] of [[identity, []], [{ ...identity, sub: 'other-test-guest' }, []]] as const) {
       // Signed-token validation is separately exercised in guestHistory.test.ts.
       const handler = createMyBookingsHandler({ authenticate: async () => owner, repository });
       const response = await handler(new Request('http://localhost/api/my-bookings'));
