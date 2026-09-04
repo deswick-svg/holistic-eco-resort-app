@@ -1,8 +1,10 @@
 import { getRoomMedia } from "../data/roomMedia";
+import { awsConfig } from "./aws";
 import "./cognitoAuth";
 import { fetchAuthSession } from "aws-amplify/auth";
 
-const SIMPLOTEL_API_BASE_URL = "http://192.168.1.100:3000";
+const SIMPLOTEL_API_BASE_URL =
+  awsConfig.apiBaseUrl || (__DEV__ ? "http://127.0.0.1:3001" : "");
 
 export type AvailabilityRequest = {
   checkIn: string;

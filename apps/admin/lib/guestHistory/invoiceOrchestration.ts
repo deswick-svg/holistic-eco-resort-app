@@ -1,6 +1,8 @@
 import { BookingStorageConflict, DynamoGuestBookingRepository } from './dynamoRepository.ts';
 import type { GuestIdentity } from './model.ts';
 import type { BookingDraft, PersistentBookingRecord } from './persistentModel.ts';
+import { reportInvoiceStageFailure } from './invoiceDiagnostics.ts';
+import type { InvoiceFailureReporter, InvoiceFailureStage } from './invoiceDiagnostics.ts';
 import { prepareBookingCore } from '../simplotel/bookingPreparation.ts';
 import type { BookingPreparationRequest, JsonValue, PreparedBookingCore } from '../simplotel/bookingPreparation.ts';
 
@@ -39,7 +41,23 @@ function price(value: JsonValue) {
   if (typeof item.date !== 'string' || (typeof item.total_price !== 'string' && typeof item.price !== 'string' && typeof item.amount !== 'string')) {
     throw new InvoiceOrchestrationError('INVALID_REQUEST');
   }
-  return { date: item.date, price: money(String(item.total_price ?? item.price ?? item.amount)), taxes: [] };
+  const date = normalizeDailyPriceDate(item.date);
+  return { date, price: money(String(item.total_price ?? item.price ?? item.amount)), taxes: [] };
+}
+
+function normalizeDailyPriceDate(value: string) {
+  const isDate = (candidate: string) => {
+    const parsed = new Date(`${candidate}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate;
+  };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value) && isDate(value)) return value;
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
+  if (!match) throw new InvoiceOrchestrationError('INVALID_REQUEST');
+  const normalized = `${match[3]}-${match[2]}-${match[1]}`;
+  if (!isDate(normalized)) {
+    throw new InvoiceOrchestrationError('INVALID_REQUEST');
+  }
+  return normalized;
 }
 /** Converts only freshly revalidated data. Raw provider responses/tokens are never stored. */
 export function buildInvoiceBookingDraft(prepared: PreparedInvoice, request: BookingPreparationRequest): BookingDraft {
@@ -76,15 +94,21 @@ export function createAuthenticatedInvoiceOrchestrator(deps: {
   validateAndPrepare: (body: unknown, propertyId: number) => Promise<{ request: BookingPreparationRequest; prepared: PreparedInvoice }>;
   repository: WriteRepository;
   submitInvoice: (core: PreparedBookingCore) => Promise<Identifiers>;
+  reportFailure?: InvoiceFailureReporter;
 }) {
+  const reportFailure = deps.reportFailure ?? reportInvoiceStageFailure;
+  const stage = async <T>(name: InvoiceFailureStage, operation: () => T | Promise<T>): Promise<T> => {
+    try { return await operation(); }
+    catch (error) { reportFailure(name, error); throw error; }
+  };
   const recover = (owner: GuestIdentity, key: string) => deps.repository.getOwned(owner, GUEST_BOOKING_PROPERTY_ID, key);
   return async (httpRequest: Request, body: unknown): Promise<Identifiers> => {
-    const owner = await deps.authenticate(httpRequest);
-    const { submissionId } = strictSubmission(body);
-    const { request, prepared } = await deps.validateAndPrepare(body, GUEST_BOOKING_PROPERTY_ID);
-    const draft = buildInvoiceBookingDraft(prepared, request);
+    const owner = await stage('authentication', () => deps.authenticate(httpRequest));
+    const { submissionId } = await stage('request_parsing', () => strictSubmission(body));
+    const { request, prepared } = await stage('fresh_preparation', () => deps.validateAndPrepare(body, GUEST_BOOKING_PROPERTY_ID));
+    const draft = await stage('draft_mapping', () => buildInvoiceBookingDraft(prepared, request));
     let record: PersistentBookingRecord;
-    try { record = await deps.repository.begin(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, draft); }
+    try { record = await stage('repository_begin', () => deps.repository.begin(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, draft)); }
     catch (error) { throw error instanceof BookingStorageConflict ? new InvoiceOrchestrationError('CONFLICT') : error; }
     const done = identifiers(record);
     if (record.processingState === 'invoice_created' && done) return done;

@@ -1,5 +1,6 @@
 import { createGuestHistoryDynamoTransport, readGuestHistoryDynamoConfig } from './dynamoTransport.ts';
 import type { DynamoGuestBookingRepository } from './dynamoRepository.ts';
+import { reportInvoiceStageFailure } from './invoiceDiagnostics.ts';
 
 const REGION = 'eu-north-1';
 const TABLE = 'holistic-eco-resort-guest-bookings-dev';
@@ -15,10 +16,15 @@ export function createGuestHistoryWriteRepository(
   let repository: WriteRepository | undefined;
   const get = () => {
     if (repository) return repository;
-    const config = readConfig();
-    if (config.region !== REGION || config.table !== TABLE) throw new Error('Guest booking storage configuration is unavailable');
-    repository = create(config).repository;
-    return repository;
+    try {
+      const config = readConfig();
+      if (config.region !== REGION || config.table !== TABLE) throw new Error('Guest booking storage configuration is unavailable');
+      repository = create(config).repository;
+      return repository;
+    } catch (error) {
+      reportInvoiceStageFailure('repository_factory', error);
+      throw error;
+    }
   };
   return {
     begin: (...args) => get().begin(...args),

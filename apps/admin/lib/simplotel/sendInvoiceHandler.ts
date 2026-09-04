@@ -6,6 +6,8 @@ import { BookingExecutionError, buildPaymentLinkResult, requireBookingCreationEn
 import { BookingPreparationError, InvoiceConfigurationError, prepareBookingCore, validateBookingPreparationRequest } from './bookingPreparation.ts';
 import type { PreparedBookingCore, SimplotelAvailabilityResponse, SimplotelInvoicePayload } from './bookingPreparation.ts';
 import { InvoiceTestAuthorizationError } from './invoiceTestAuthorization.ts';
+import { reportInvoiceStageFailure } from '../guestHistory/invoiceDiagnostics.ts';
+import type { InvoiceFailureReporter } from '../guestHistory/invoiceDiagnostics.ts';
 
 type Hold = SimplotelInvoicePayload['holdInventory'];
 type Repository = Pick<DynamoGuestBookingRepository, 'begin' | 'advance' | 'getOwned'>;
@@ -19,6 +21,7 @@ export type SendInvoiceDependencies = {
   repository: Repository;
   revalidate: (request: ReturnType<typeof validateBookingPreparationRequest>, accessToken: string) => Promise<SimplotelAvailabilityResponse>;
   submitInvoice: (core: PreparedBookingCore, hold: Hold, accessToken: string) => Promise<Identifiers>;
+  reportFailure?: InvoiceFailureReporter;
 };
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: {
@@ -50,8 +53,11 @@ export function createSendInvoiceHandler(deps: SendInvoiceDependencies) {
           return { request: bookingRequest, prepared: prepareBookingCore(bookingRequest, availability, propertyId) };
         },
         submitInvoice: core => deps.submitInvoice(core, hold, accessToken),
+        reportFailure: deps.reportFailure,
       });
-      const body: unknown = await request.json();
+      let body: unknown;
+      try { body = await request.json(); }
+      catch (error) { (deps.reportFailure ?? reportInvoiceStageFailure)('request_parsing', error); throw error; }
       const result = await orchestrate(request, body);
       return json(buildPaymentLinkResult({ booking_id: result.bookingId, quote_id: result.quoteId, invoice_id: result.invoiceId }));
     } catch (error) {

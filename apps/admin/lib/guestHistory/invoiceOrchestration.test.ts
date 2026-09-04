@@ -63,6 +63,7 @@ function setup(provider: (calls: number) => Promise<typeof ids> = async () => id
       return { request, prepared: prepareBookingCore(request, availability, 7849) };
     },
     submitInvoice: () => provider(++calls),
+    reportFailure: () => {},
   });
   return { db, repository, create, calls: () => calls };
 }
@@ -88,6 +89,26 @@ test('identical repeat is recovered; changed guest or selection conflicts withou
   assert.equal(s.calls(), 1);
   const stored = await s.repository.getOwned(ownerA, 7849, baseBody.submissionId);
   assert.equal(stored?.summary.referenceId, ids.bookingId);
+});
+
+test('live DD-MM-YYYY daily prices are normalized before durable begin and provider dispatch', async () => {
+  const liveBody = structuredClone(baseBody);
+  liveBody.checkIn = '2026-10-05'; liveBody.checkOut = '2026-10-06';
+  liveBody.selection.occupancy.prices = [{ date: '05-10-2026', total_price: '200.00' }];
+  const liveAvailability: SimplotelAvailabilityResponse = { rooms: [{ room_type: 103939, name: 'Test Room', availability: 1,
+    rate_plans: [{ ...liveBody.selection.ratePlan, occupancies: [liveBody.selection.occupancy] }] }] };
+  const db = new MemoryDocuments();
+  const repository = new DynamoGuestBookingRepository(db, 'local-test-bookings', () => '2026-09-04T00:00:00.000Z');
+  let providerCalls = 0;
+  const run = createAuthenticatedInvoiceOrchestrator({ authenticate: async () => ownerA, repository,
+    validateAndPrepare: async raw => { const request = validateBookingPreparationRequest(raw);
+      return { request, prepared: prepareBookingCore(request, liveAvailability, 7849) }; },
+    submitInvoice: async () => { providerCalls++; return ids; }, reportFailure: () => {} });
+  assert.deepEqual(await run(request(), liveBody), ids);
+  const stored = await repository.getOwned(ownerA, 7849, liveBody.submissionId);
+  assert.equal(stored?.rooms[0]?.dailyPrices[0]?.date, '2026-10-05');
+  assert.equal(stored?.processingState, 'invoice_created');
+  assert.equal(providerCalls, 1);
 });
 
 test('only one concurrent dispatch claim can invoke provider', async () => {

@@ -9,6 +9,7 @@ import { createSendInvoiceHandler } from './sendInvoiceHandler.ts';
 import { requireServerControlledInvoiceTestAuthorization } from './invoiceTestAuthorization.ts';
 import { POST as defaultPost } from '../../app/api/simplotel/booking/send-invoice/route.ts';
 import type { SimplotelAvailabilityResponse } from './bookingPreparation.ts';
+import { reportInvoiceStageFailure } from '../guestHistory/invoiceDiagnostics.ts';
 
 globalThis.fetch = async () => { throw new Error('Live network forbidden'); };
 const owner = { issuer: 'https://cognito.test/pool', sub: 'TEST-GUEST-A' };
@@ -59,6 +60,7 @@ function setup(overrides: Partial<Parameters<typeof createSendInvoiceHandler>[0]
     authenticate: async () => { authCalls++; return owner; }, repository,
     revalidate: async () => { repository.events.push('revalidated'); return availability; },
     submitInvoice: async () => { providerCalls++; assert.equal(repository.events.at(-1), 'dispatching'); repository.events.push('provider'); return ids; },
+    reportFailure: () => {},
     ...overrides });
   return { handler, repository, providerCalls: () => providerCalls, authCalls: () => authCalls };
 }
@@ -68,6 +70,29 @@ test('disabled and unauthenticated requests cannot reach storage or provider', a
   assert.equal((await disabled.handler(request())).status, 403); assert.equal(disabled.authCalls(), 0); assert.deepEqual(disabled.repository.events, []);
   const unauthenticated = setup({ authenticate: async () => { throw new GuestHistoryAuthError(401); } });
   assert.equal((await unauthenticated.handler(request())).status, 401); assert.deepEqual(unauthenticated.repository.events, []);
+});
+
+test('safe diagnostics classify stages without logging request data or underlying messages', async () => {
+  const failures: { stage: string; error: unknown }[] = [];
+  const marker = Object.assign(new Error('must-not-be-logged booking@example.test SECRET-VALUE'), { code: 'MOCK_FAILURE' });
+  const s = setup({ revalidate: async () => { throw marker; }, reportFailure: (stage, error) => failures.push({ stage, error }) });
+  const response = await s.handler(request());
+  assert.equal(response.status, 500);
+  assert.deepEqual(failures.map(failure => failure.stage), ['fresh_preparation']);
+  assert.equal(failures[0]?.error, marker);
+  assert.equal(s.providerCalls(), 0);
+});
+
+test('default stage logger omits error messages and sensitive request data', () => {
+  const calls: unknown[][] = [];
+  const original = console.error; console.error = (...args: unknown[]) => { calls.push(args); };
+  try {
+    reportInvoiceStageFailure('repository_begin', Object.assign(
+      new Error('booking@example.test SECRET-VALUE'), { code: 'MOCK_FAILURE' }));
+  } finally { console.error = original; }
+  const logged = JSON.stringify(calls);
+  assert.match(logged, /repository_begin|MOCK_FAILURE/);
+  assert.doesNotMatch(logged, /booking@example\.test|SECRET-VALUE/);
 });
 
 test('default route remains externally disabled without the execution flag', async () => {
