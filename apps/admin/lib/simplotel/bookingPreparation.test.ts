@@ -157,10 +157,10 @@ test("full-online payload uses the complete validated total and 100 percent", ()
     unit: "HOURS",
   });
 
-  const payNow = buildFullOnlineInvoicePayload(core, getInvoiceInventoryHold("30", "MINUTES"));
+  const payNow = buildFullOnlineInvoicePayload(core, getInvoiceInventoryHold("10", "MINUTES"));
   assert.equal(payNow.advanceAmount, 1380);
   assert.equal(payNow.advancePercentage, 100);
-  assert.deepEqual(payNow.holdInventory, { enabled: true, value: 30, unit: "MINUTES" });
+  assert.deepEqual(payNow.holdInventory, { enabled: true, value: 10, unit: "MINUTES" });
   assert.deepEqual(payNow.lineItems, core.lineItems);
   assert.deepEqual(payNow.quoteInfo, core.quoteInfo);
 });
@@ -189,15 +189,15 @@ test("invoice builder reads hold from the server environment only", () => {
     process.env.SIMPLOTEL_INVOICE_HOLD_HOURS = "1"; // Legacy configuration cannot be a fallback.
     const core = prepareBookingCore(request, availability, 7849).payload;
     assert.throws(() => buildFullOnlineInvoicePayload(core), InvoiceConfigurationError);
-    process.env.SIMPLOTEL_INVOICE_HOLD_VALUE = "30";
+    process.env.SIMPLOTEL_INVOICE_HOLD_VALUE = "10";
     assert.throws(() => buildFullOnlineInvoicePayload(core), InvoiceConfigurationError);
     delete process.env.SIMPLOTEL_INVOICE_HOLD_VALUE;
     process.env.SIMPLOTEL_INVOICE_HOLD_UNIT = "MINUTES";
     assert.throws(() => buildFullOnlineInvoicePayload(core), InvoiceConfigurationError);
-    process.env.SIMPLOTEL_INVOICE_HOLD_VALUE = "30";
+    process.env.SIMPLOTEL_INVOICE_HOLD_VALUE = "10";
     const withUntrustedHold = { ...core, holdInventory: { enabled: false, value: 999, unit: "DAYS" } };
     assert.deepEqual(buildFullOnlineInvoicePayload(withUntrustedHold).holdInventory, {
-      enabled: true, value: 30, unit: "MINUTES",
+      enabled: true, value: 10, unit: "MINUTES",
     });
   } finally {
     keys.forEach((key, index) => {

@@ -23,7 +23,7 @@ const payload = {
   propertyId: 7849,
   advanceAmount: 1380,
   advancePercentage: 100,
-  holdInventory: { enabled: true, value: 30, unit: "MINUTES" },
+  holdInventory: { enabled: true, value: 10, unit: "MINUTES" },
   quoteInfo: {
     checkInDate: "2026-10-10",
     checkOutDate: "2026-10-12",
@@ -59,7 +59,7 @@ test("controlled invoice requires both execution and operator authorization", as
         assert.match(String(url), /\/send-invoice$/);
         assert.equal(new Headers(init?.headers).has("X-Simplotel-Test-Authorization"), false);
         assert.equal(String(init?.body).includes(secret), false);
-        assert.deepEqual(JSON.parse(String(init?.body)).holdInventory, { enabled: true, value: 30, unit: "MINUTES" });
+        assert.deepEqual(JSON.parse(String(init?.body)).holdInventory, { enabled: true, value: 10, unit: "MINUTES" });
         return Response.json({ booking_id: "B1", quote_id: "Q1", invoice_id: 1 });
       },
     });

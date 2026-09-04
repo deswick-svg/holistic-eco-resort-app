@@ -8,21 +8,21 @@ The server requires both settings before sending an invoice:
 The intended production/test configuration is explicitly:
 
 ```dotenv
-SIMPLOTEL_INVOICE_HOLD_VALUE=30
+SIMPLOTEL_INVOICE_HOLD_VALUE=10
 SIMPLOTEL_INVOICE_HOLD_UNIT=MINUTES
 ```
 
-This supplies `holdInventory: { enabled: true, value: 30, unit: "MINUTES" }`.
+This supplies `holdInventory: { enabled: true, value: 10, unit: "MINUTES" }`.
 There is no implicit runtime default. Missing, zero, negative, fractional,
 whitespace-padded, unsafe-integer, or invalid settings fail closed before
 availability or invoice requests. The old `SIMPLOTEL_INVOICE_HOLD_HOURS` setting
 is no longer read; replace it with both new settings when configuring the server.
 
 Simplotel has confirmed positive whole numbers with these three units, including
-`1 HOURS` and `30 MINUTES`. Although Simplotel falls back to the property's default
+`1 HOURS`, `30 MINUTES`, and the controlled-test value `10 MINUTES`. Although Simplotel falls back to the property's default
 for values at or below zero, this application deliberately rejects those values.
 Quote-expiry reminder emails are sent only for holds of at least two hours;
-do not expect a reminder email for the intended 30-minute hold.
+do not expect a reminder email for the intended 10-minute hold.
 
 It is not a mobile input and is not returned in preparation metadata.
 It does not enable execution: `SIMPLOTEL_BOOKING_ENABLED` must remain false
@@ -70,3 +70,14 @@ It returns OUTCOME_UNCERTAIN and is never automatically retried. The existing
 in-memory submission registry caches the outcome under the same submission ID;
 it is not durable across restarts/instances and has a 10-minute retention period.
 Never retry an uncertain operation with a new ID: reconcile with resort staff first.
+
+## Controlled-test cleanup and reconciliation
+
+For the controlled test, use the `booking_id` returned by `/send-invoice` with
+`/status/CANCELLED` for cleanup. Simplotel has confirmed that cancellation
+immediately releases the inventory hold. Do not attempt cleanup with the quote or
+invoice identifier.
+
+A read-only booking/invoice status endpoint for reconciliation remains pending
+Simplotel confirmation. Until it is documented, an uncertain request must be
+reconciled with Simplotel support and must not be retried automatically.
