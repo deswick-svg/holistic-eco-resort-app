@@ -115,6 +115,38 @@ export type PaymentLinkResponse = {
   bookingStatus: "UNCONFIRMED";
 };
 
+export class SimplotelServiceError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "SimplotelServiceError";
+    this.code = code;
+  }
+}
+
+function responseError(data: unknown, fallback: string) {
+  const error = data && typeof data === "object"
+    ? (data as { error?: { code?: unknown; message?: unknown } }).error
+    : undefined;
+  return new SimplotelServiceError(
+    typeof error?.code === "string" ? error.code : "REQUEST_FAILED",
+    typeof error?.message === "string" ? error.message : fallback
+  );
+}
+
+async function fetchResponse(url: string, init: RequestInit, phase: "safe" | "invoice") {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new SimplotelServiceError(
+      phase === "invoice" ? "OUTCOME_UNCERTAIN" : "NETWORK_UNAVAILABLE",
+      phase === "invoice"
+        ? "The payment-link request outcome is uncertain. Do not retry."
+        : "The resort server could not be reached."
+    );
+  }
+}
+
 function bookingRequestBody(input: {
   request: AvailabilityRequest;
   selectedRate: LiveStayRate;
@@ -174,21 +206,20 @@ export const simplotel = {
   request: AvailabilityRequest
 ): Promise<LiveStayRate[]> {
   const [response, remoteRoomMedia] = await Promise.all([
-    fetch(`${SIMPLOTEL_API_BASE_URL}/api/simplotel/availability`, {
+    fetchResponse(`${SIMPLOTEL_API_BASE_URL}/api/simplotel/availability`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(request),
-      }),
+      }, "safe"),
     getRemoteRoomMedia(),
   ]);
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Simplotel availability failed: ${response.status} ${errorText}`
-    );
+    let data: unknown;
+    try { data = await response.json(); } catch { data = undefined; }
+    throw responseError(data, "Live availability could not be loaded.");
   }
 
   const data = await response.json();
@@ -285,20 +316,21 @@ export const simplotel = {
     selectedRate: LiveStayRate;
     guest: BookingGuestDetails;
   }): Promise<BookingPreparationResponse> {
-    const response = await fetch(
+    const response = await fetchResponse(
       `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking/prepare`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bookingRequestBody(input)),
-      }
+      },
+      "safe"
     );
 
-    const data = await response.json();
+    let data: unknown;
+    try { data = await response.json(); }
+    catch { throw new SimplotelServiceError("INVALID_RESPONSE", "Booking validation returned an unreadable response."); }
     if (!response.ok) {
-      throw new Error(
-        data?.error?.message ?? "Booking details could not be prepared."
-      );
+      throw responseError(data, "Booking details could not be prepared.");
     }
     return data as BookingPreparationResponse;
   },
@@ -312,7 +344,7 @@ export const simplotel = {
     const session = await fetchAuthSession();
     const accessToken = session.tokens?.accessToken;
     if (!accessToken) throw new Error("Please sign in before creating a payment link.");
-    const response = await fetch(
+    const response = await fetchResponse(
       `${SIMPLOTEL_API_BASE_URL}/api/simplotel/booking/send-invoice`,
       {
         method: "POST",
@@ -321,19 +353,23 @@ export const simplotel = {
           ...bookingRequestBody(input),
           submissionId: input.submissionId,
         }),
-      }
+      },
+      "invoice"
     );
-    const data = await response.json();
+    let data: unknown;
+    try { data = await response.json(); }
+    catch { throw new SimplotelServiceError("OUTCOME_UNCERTAIN", "The payment-link request outcome is uncertain. Do not retry."); }
     if (!response.ok) {
-      throw new Error(data?.error?.message ?? "Payment link could not be created.");
+      throw responseError(data, "Payment link could not be created.");
     }
-    if (!data?.booking_id || !data?.quote_id || !Number.isInteger(data?.invoice_id) ||
-        data?.status !== "PAYMENT_LINK_CREATED" ||
-        data?.bookingStatus !== "UNCONFIRMED" ||
-        data?.paymentStatus !== "PAYMENT_PENDING") {
-      throw new Error("Invoice response did not contain the required identifiers.");
+    const payment = data as Partial<PaymentLinkResponse> | null;
+    if (!payment?.booking_id || !payment.quote_id || !Number.isInteger(payment.invoice_id) ||
+        payment.status !== "PAYMENT_LINK_CREATED" ||
+        payment.bookingStatus !== "UNCONFIRMED" ||
+        payment.paymentStatus !== "PAYMENT_PENDING") {
+      throw new SimplotelServiceError("OUTCOME_UNCERTAIN", "The payment-link request outcome is uncertain. Do not retry.");
     }
-    return data as PaymentLinkResponse;
+    return payment as PaymentLinkResponse;
   },
 
   async manageBooking(_bookingId: string): Promise<unknown> {

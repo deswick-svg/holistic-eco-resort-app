@@ -120,7 +120,7 @@ test("mobile final action remains disabled when server capability is false", () 
   assert.ok(finalAction, "Final booking action was not found.");
   assert.match(
     finalAction,
-    /disabled=\{!preparation\.paymentCreationEnabled \|\| submitting\}/
+    /disabled=\{!preparation\.paymentCreationEnabled \|\| submitting \|\| !searchRequest \|\| !selectedRate\}/
   );
   assert.match(finalAction, /onPress=\{handleCreatePaymentLink\}/);
   assert.match(finalAction, /Payment not yet enabled/);

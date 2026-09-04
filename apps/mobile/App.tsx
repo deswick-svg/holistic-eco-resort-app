@@ -15,6 +15,7 @@ import { CouponScreen } from './src/screens/CouponScreen';
 import { BookingHistoryScreen } from './src/screens/BookingHistoryScreen';
 import { GuestLoginScreen } from './src/screens/GuestLoginScreen';
 import { EmployeeLoginScreen } from './src/screens/EmployeeLoginScreen';
+import { AccountDeletionScreen } from './src/screens/AccountDeletionScreen';
 import { PlaceholderScreen } from './src/screens/PlaceholderScreen';
 import { MenuDrawer } from './src/components/MenuDrawer';
 import { colors } from './src/theme/colors';
@@ -49,7 +50,7 @@ export default function App() {
         <LocalAttractionsScreen onBack={() => setScreen('home')} />
       ) : screen === 'map' ? (
         <PropertyMapScreen onBack={() => setScreen('home')} />
-      ) : screen === 'reviews' ? (
+      ) : screen === 'reviews' || screen === 'tripadvisor' || screen === 'google-review' ? (
         <ReviewScreen onBack={() => setScreen('home')} />
       ) : screen === 'coupon' ? (
         <CouponScreen onBack={() => setScreen('home')} />
@@ -59,6 +60,8 @@ export default function App() {
         <GuestLoginScreen onBack={() => setScreen('home')} />
       ) : screen === 'employee-login' ? (
         <EmployeeLoginScreen onBack={() => setScreen('home')} />
+      ) : screen === 'delete-account' ? (
+        <AccountDeletionScreen onBack={() => setScreen('home')} />
       ) : (
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}

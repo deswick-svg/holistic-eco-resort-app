@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
@@ -13,6 +13,26 @@ const quickActions = [
   ['Activities', 'bicycle-outline', 'activities'],
   ['Ayurveda', 'leaf-outline', 'spa'],
 ] as const;
+
+const officialWhatsAppNumber = '919495850389';
+
+async function openResortWhatsApp(openContact: () => void) {
+  try {
+    await Linking.openURL(`whatsapp://send?phone=${officialWhatsAppNumber}`);
+    return;
+  } catch {
+    try {
+      await Linking.openURL(`https://wa.me/${officialWhatsAppNumber}`);
+      return;
+    } catch {
+      Alert.alert(
+        'WhatsApp unavailable',
+        'WhatsApp could not be opened. Official call and email options are available on Contact Us.',
+        [{ text: 'Open Contact Us', onPress: openContact }],
+      );
+    }
+  }
+}
 
 export function HomeScreen({ onMenu, onSelect }: { onMenu: () => void; onSelect: (key: string) => void }) {
   return (
@@ -66,7 +86,14 @@ export function HomeScreen({ onMenu, onSelect }: { onMenu: () => void; onSelect:
           </View>
         </View>
       </ScrollView>
-      <Pressable style={styles.whatsapp} onPress={() => onSelect('contact')}><Ionicons name="logo-whatsapp" size={31} color={colors.white} /></Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Contact Holistic Eco-Resort on WhatsApp"
+        style={styles.whatsapp}
+        onPress={() => openResortWhatsApp(() => onSelect('contact'))}
+      >
+        <Ionicons name="logo-whatsapp" size={31} color={colors.white} />
+      </Pressable>
     </View>
   );
 }

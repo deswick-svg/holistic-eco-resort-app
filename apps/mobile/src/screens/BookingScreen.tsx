@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,8 @@ import {
   JsonValue,
   LiveStayRate,
 } from "../services/simplotel";
+import { classifyBookingFailure } from "../services/bookingUx";
+import { clearBookingDraft, loadBookingDraft, saveBookingDraft } from "../services/bookingDraftStorage";
 
 type BookingStep = "search" | "guest" | "summary" | "prepared" | "paymentPending";
 
@@ -132,6 +134,8 @@ export function BookingScreen({ onBack }: { onBack: () => void }) {
   const [preparing, setPreparing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [flowError, setFlowError] = useState("");
+  const [restoredDraft, setRestoredDraft] = useState(false);
+  const [uncertainOutcome, setUncertainOutcome] = useState(false);
   const [preparation, setPreparation] = useState<BookingPreparationResponse | null>(null);
   const [paymentLink, setPaymentLink] = useState<PaymentLinkResponse | null>(null);
   const submissionLock = useRef(false);
@@ -152,6 +156,31 @@ const formatApiDate = (date: Date) => {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+  useEffect(() => {
+    let active = true;
+    void loadBookingDraft().then((draft) => {
+      if (!active || !draft) return;
+      const localDate = (value: string) => {
+        const parts = value.split("-");
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        return new Date(year, month - 1, day);
+      };
+      setCheckIn(localDate(draft.request.checkIn));
+      setCheckOut(localDate(draft.request.checkOut));
+      setAdults(String(draft.request.adults));
+      setChildren(String(draft.request.children));
+      setChildAges(draft.request.childAge.join(", "));
+      setRooms(String(draft.request.rooms));
+      setGuest(draft.guest);
+      setRestoredDraft(true);
+      if (draft.status === "uncertain") setUncertainOutcome(true);
+    }).catch(() => {
+      // Secure storage failure must not fall back to plaintext persistence.
+    });
+    return () => { active = false; };
+  }, []);
   const handleSearchAvailability = async () => {
   if (!checkIn || !checkOut) {
     setError("Please select check-in and check-out dates.");
@@ -205,8 +234,7 @@ const formatApiDate = (date: Date) => {
     setSearchRequest(request);
     setSearched(true);
   } catch (err) {
-    console.error(err);
-    setError("Unable to load live availability. Please try again.");
+    setError(classifyBookingFailure(err, "availability").message);
     setLiveRates([]);
     setSearched(true);
   } finally {
@@ -245,6 +273,11 @@ const formatApiDate = (date: Date) => {
       return;
     }
     setGuest(normalizedGuest);
+    if (searchRequest) {
+      void saveBookingDraft({ status: "in_progress", request: searchRequest, guest: normalizedGuest }).catch(() => {
+        // Continue without persistence if secure device storage is unavailable.
+      });
+    }
     setFlowError("");
     setStep("summary");
   };
@@ -262,11 +295,9 @@ const formatApiDate = (date: Date) => {
       setPreparation(prepared);
       setStep("prepared");
     } catch (prepareError) {
-      setFlowError(
-        prepareError instanceof Error
-          ? prepareError.message
-          : "Booking details could not be prepared."
-      );
+      const failure = classifyBookingFailure(prepareError, "prepare");
+      setFlowError(failure.message);
+      if (failure.kind === "stale") setPreparation(null);
     } finally {
       setPreparing(false);
     }
@@ -285,6 +316,7 @@ const formatApiDate = (date: Date) => {
     setFlowError("");
     submissionId.current ??=
       `mobile_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    let keepLocked = false;
     try {
       const result = await simplotel.createFullOnlinePayment({
         request: searchRequest,
@@ -294,17 +326,51 @@ const formatApiDate = (date: Date) => {
       });
       setPaymentLink(result);
       setStep("paymentPending");
+      void clearBookingDraft().catch(() => {});
     } catch (bookingError) {
-      setFlowError(
-        bookingError instanceof Error
-          ? bookingError.message
-          : "Payment link could not be created."
-      );
+      const failure = classifyBookingFailure(bookingError, "invoice");
+      if (failure.kind === "uncertain") {
+        keepLocked = true;
+        setUncertainOutcome(true);
+        if (searchRequest) {
+          void saveBookingDraft({ status: "uncertain", request: searchRequest, guest }).catch(() => {});
+        }
+      } else {
+        setFlowError(failure.message);
+        if (failure.kind === "stale") {
+          setPreparation(null);
+          setStep("summary");
+        }
+      }
     } finally {
-      submissionLock.current = false;
+      if (!keepLocked) submissionLock.current = false;
       setSubmitting(false);
     }
   };
+
+  if (uncertainOutcome) {
+    return (
+      <View style={styles.page}>
+        <View style={styles.header}>
+          <View style={{ width: 40 }} />
+          <Text style={styles.title}>Request being checked</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <ScrollView contentContainerStyle={styles.body}>
+          <View style={styles.uncertainCard}>
+            <Ionicons name="alert-circle" size={48} color={colors.danger} />
+            <Text style={styles.uncertainTitle}>Please do not retry</Text>
+            <Text style={styles.uncertainText}>
+              Do not open a payment link or attempt payment. The resort is checking whether your request reached the booking provider. Your booking is not confirmed and this incomplete attempt will not appear in My Stays.
+            </Text>
+          </View>
+          <Pressable style={styles.button} onPress={onBack}>
+            <Text style={styles.buttonText}>Return to home</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (step !== "search" && selectedRate && searchRequest) {
     const review = preparation?.summary;
@@ -492,14 +558,14 @@ const formatApiDate = (date: Date) => {
                     testID="booking-final-action"
                     style={[
                       styles.button,
-                      (!preparation.paymentCreationEnabled || submitting) &&
+                      (!preparation.paymentCreationEnabled || submitting || !searchRequest || !selectedRate) &&
                         styles.finalActionDisabled,
                     ]}
-                    disabled={!preparation.paymentCreationEnabled || submitting}
+                    disabled={!preparation.paymentCreationEnabled || submitting || !searchRequest || !selectedRate}
                     onPress={handleCreatePaymentLink}
                     accessibilityRole="button"
                     accessibilityState={{
-                      disabled: !preparation.paymentCreationEnabled || submitting,
+                      disabled: !preparation.paymentCreationEnabled || submitting || !searchRequest || !selectedRate,
                     }}
                   >
                     <Ionicons
@@ -518,7 +584,7 @@ const formatApiDate = (date: Date) => {
                   <Text style={styles.finalActionNote}>
                     {preparation.paymentCreationEnabled
                       ? "Availability and the full total will be checked again before the invoice request is submitted."
-                      : "Payment-link creation is disabled by the server safety setting."}
+                      : "Payment-link creation is disabled by the resort. No booking, inventory hold, or payment will be created."}
                   </Text>
                 </>
               ) : null}
@@ -544,6 +610,14 @@ const formatApiDate = (date: Date) => {
         <View style={{ width: 40 }} />
       </View>
       <ScrollView contentContainerStyle={styles.body}>
+      {restoredDraft ? (
+        <View style={styles.restoredNotice}>
+          <Ionicons name="shield-checkmark-outline" size={20} color={colors.forest} />
+          <Text style={styles.restoredText}>
+            Your contact and search details were securely restored. Room availability and prices were not restored; search and validate them again.
+          </Text>
+        </View>
+      ) : null}
         <Text style={styles.headline}>Find your perfect stay</Text>
         <Text style={styles.sub}>Live availability and final rates will come from the resort's Simplotel booking system.</Text>
         <View style={styles.formCard}>
@@ -803,6 +877,43 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 13,
     lineHeight: 19,
+  },
+  uncertainCard: {
+    marginTop: 36,
+    padding: 24,
+    borderRadius: 18,
+    backgroundColor: "#FBEAEA",
+    borderWidth: 1,
+    borderColor: "#E8B8B8",
+    alignItems: "center",
+  },
+  uncertainTitle: {
+    marginTop: 12,
+    fontSize: 24,
+    fontWeight: "800",
+    color: colors.danger,
+  },
+  uncertainText: {
+    marginTop: 12,
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.ink,
+    textAlign: "center",
+  },
+  restoredNotice: {
+    marginBottom: 16,
+    padding: 13,
+    borderRadius: 12,
+    backgroundColor: colors.sage,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  restoredText: {
+    flex: 1,
+    color: colors.forest,
+    fontSize: 12.5,
+    lineHeight: 18,
   },
   buttonDisabled: {
     opacity: 0.6,
