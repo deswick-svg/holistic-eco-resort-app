@@ -9,8 +9,8 @@ export type BookingSummary = {
   checkOutDate: string;
   adults: number;
   children: number;
-  bookingStatus: 'pending' | 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled' | 'unknown';
-  paymentStatus: 'not_required' | 'pending' | 'paid' | 'failed' | 'unknown';
+  bookingStatus: 'pending' | 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled' | 'failed' | 'unknown';
+  paymentStatus: 'not_required' | 'pending' | 'paid' | 'failed' | 'not_collected' | 'unknown';
   stayState: 'upcoming' | 'current' | 'past';
   total?: { amount: string; currency: string };
 };

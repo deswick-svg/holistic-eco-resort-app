@@ -71,6 +71,10 @@ class WireDatabase {
 const identity = { issuer: 'https://issuer.test/pool', sub: 'test-only-guest' };
 const key = 'test-submission-0001';
 const ids = { bookingId: 'TEST-BOOKING', quoteId: 'TEST-QUOTE', invoiceId: 1 };
+const reconciliation = { bookingId: 'TEST-FAILED', providerBookingStatus: 'FAILED' as const,
+  total: { amount: '112.00', currency: 'INR' }, amountPaid: { amount: '0.00', currency: 'INR' },
+  refundAmount: { amount: '0.00', currency: 'INR' }, reconciledAt: '2026-09-07T00:00:00.000Z',
+  source: 'https://bookings.simplotel.com/payment/get_booking_details' as const };
 const money = { amount: '112.00', currency: 'INR' };
 function draft(): BookingDraft {
   return { provenance: 'test_fixture', guest: { name: 'Fictional Guest', email: 'test@example.com', phone: '+910000000000' },
@@ -143,6 +147,26 @@ test('CAS and external ownership reservation stay in one SDK transaction; confli
     assert.equal(writes[1].Put.Item.target.S, writes[1].Put.ExpressionAttributeValues![':target'].S);
     await assert.rejects(t.repository.advance(other, 7849, key, 2, 'invoice_created', ids), BookingStorageConflict);
     assert.equal((await t.repository.getOwned(other, 7849, key))!.version, 2);
+  } finally { t.destroy(); }
+});
+test('reconciled failure uses one conditional transaction and remains hidden from history', async () => {
+  const s = setup(); const t = s.create();
+  try {
+    await t.repository.begin(identity, 7849, key, draft());
+    await t.repository.advance(identity, 7849, key, 1, 'dispatching');
+    await t.repository.advance(identity, 7849, key, 2, 'uncertain');
+    const failed = await t.repository.reconcileFailed(identity, 7849, key, 3, reconciliation);
+    assert.equal(failed.processingState, 'reconciled_failed');
+    assert.equal(failed.version, 4);
+    const writes = s.db.calls.at(-1)!.body.TransactItems!;
+    assert.equal(writes.length, 2);
+    assert.equal(writes[0].Put.ExpressionAttributeValues![':version'].N, '3');
+    assert.equal(writes[1].Put.Item.sk.S, 'OWNERSHIP');
+    assert.equal(writes[1].Put.Item.target.S, writes[1].Put.ExpressionAttributeValues![':target'].S);
+    const response = await createMyBookingsHandler({ authenticate: async () => identity, repository: t.repository })(
+      new Request('http://localhost/api/my-bookings'),
+    );
+    assert.deepEqual(await response.json(), { bookings: [] });
   } finally { t.destroy(); }
 });
 test('lost write response and throttling are not retried; recovery cannot redispatch', async () => {

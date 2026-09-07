@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { GuestBookingRepository, GuestIdentity } from './model.ts';
 import { assertDraft, assertRecord, validIdentity, validIdentifiers, validProperty, validSubmission } from './persistentModel.ts';
-import type { BookingDraft, PersistentBookingRecord, ProcessingState } from './persistentModel.ts';
+import type { BookingDraft, PersistentBookingRecord, ProcessingState, ReconciliationEvidence } from './persistentModel.ts';
 
 type Key = { pk: string; sk: string };
 type Item = Key & { record?: PersistentBookingRecord; target?: string };
@@ -39,6 +39,9 @@ function scope(identity: GuestIdentity, propertyId: number): string {
 function keyFor(identity: GuestIdentity, propertyId: number, submissionKey: string): Key {
   if (!validSubmission(submissionKey)) throw new Error('Invalid submission key');
   return { pk: scope(identity, propertyId), sk: `SUBMISSION#${submissionKey}` };
+}
+function providerKey(propertyId: number, bookingId: string): Key {
+  return { pk: `PROVIDER#${digest([propertyId, bookingId])}`, sk: 'OWNERSHIP' };
 }
 function conditionalFailure(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -131,7 +134,7 @@ export class DynamoGuestBookingRepository implements GuestBookingRepository {
     if (!existing || existing.version !== expectedVersion) throw new BookingStorageConflict();
     const allowed: Record<ProcessingState, ProcessingState[]> = {
       prepared: ['dispatching'], dispatching: ['uncertain', 'provider_rejected', 'invoice_created'],
-      uncertain: ['invoice_created'], provider_rejected: [], invoice_created: [],
+      uncertain: ['invoice_created'], provider_rejected: [], invoice_created: [], reconciled_failed: [],
     };
     if (!allowed[existing.processingState].includes(nextState)) throw new BookingStorageConflict();
     if (nextState === 'invoice_created' ? !validIdentifiers(identifiers) : identifiers !== undefined) throw new Error('Invalid invoice identifiers');
@@ -150,13 +153,55 @@ export class DynamoGuestBookingRepository implements GuestBookingRepository {
       // A GSI alone cannot enforce uniqueness. Reserve the external booking ID
       // atomically with the record; never reassign it to another owner/attempt.
       writes.push({ Put: { TableName: this.table,
-        Item: { pk: `PROVIDER#${digest([propertyId, identifiers.bookingId])}`, sk: 'OWNERSHIP', target: JSON.stringify(key) },
+        Item: { ...providerKey(propertyId, identifiers.bookingId), target: JSON.stringify(key) },
         ConditionExpression: 'attribute_not_exists(pk) OR #target = :target',
         ExpressionAttributeNames: { '#target': 'target' }, ExpressionAttributeValues: { ':target': JSON.stringify(key) },
       } });
     }
     try { await this.client.transactWrite({ TransactItems: writes }); }
     catch (error) { if (conditionalFailure(error)) throw new BookingStorageConflict(); throw error; }
+    return structuredClone(record);
+  }
+
+  /** Trusted operator reconciliation only. This never dispatches a provider call. */
+  async reconcileFailed(identity: GuestIdentity, propertyId: number, submissionKey: string,
+    expectedVersion: number, evidence: ReconciliationEvidence): Promise<PersistentBookingRecord> {
+    const existing = await this.getOwned(identity, propertyId, submissionKey);
+    if (!existing || existing.version !== expectedVersion || existing.processingState !== 'uncertain') {
+      throw new BookingStorageConflict();
+    }
+    const key = keyFor(identity, propertyId, submissionKey);
+    const record: PersistentBookingRecord = structuredClone({
+      ...existing,
+      processingState: 'reconciled_failed',
+      version: existing.version + 1,
+      updatedAt: evidence.reconciledAt,
+      reconciliation: evidence,
+      summary: {
+        ...existing.summary,
+        referenceId: evidence.bookingId,
+        bookingStatus: 'failed',
+        paymentStatus: 'not_collected',
+      },
+    });
+    assertRecord(record);
+    const target = JSON.stringify(key);
+    try {
+      await this.client.transactWrite({ TransactItems: [
+        { Put: { TableName: this.table, Item: { ...key, record },
+          ConditionExpression: '#record.#version = :version',
+          ExpressionAttributeNames: { '#record': 'record', '#version': 'version' },
+          ExpressionAttributeValues: { ':version': expectedVersion },
+        } },
+        { Put: { TableName: this.table, Item: { ...providerKey(propertyId, evidence.bookingId), target },
+          ConditionExpression: 'attribute_not_exists(pk) OR #target = :target',
+          ExpressionAttributeNames: { '#target': 'target' }, ExpressionAttributeValues: { ':target': target },
+        } },
+      ] });
+    } catch (error) {
+      if (conditionalFailure(error)) throw new BookingStorageConflict();
+      throw error;
+    }
     return structuredClone(record);
   }
 }

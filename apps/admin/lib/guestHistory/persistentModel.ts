@@ -21,7 +21,16 @@ export type BookingDraft = Pick<OwnedBookingRecord, 'summary' | 'provenance'> & 
   rooms: RoomSnapshot[];
   totals?: { subtotal: Money; taxes: Money; total: Money };
 };
-export type ProcessingState = 'prepared' | 'dispatching' | 'uncertain' | 'provider_rejected' | 'invoice_created';
+export type ProcessingState = 'prepared' | 'dispatching' | 'uncertain' | 'provider_rejected' | 'invoice_created' | 'reconciled_failed';
+export type ReconciliationEvidence = {
+  bookingId: string;
+  providerBookingStatus: 'FAILED';
+  total: Money;
+  amountPaid: Money;
+  refundAmount: Money;
+  reconciledAt: string;
+  source: 'https://bookings.simplotel.com/payment/get_booking_details';
+};
 export type PersistentBookingRecord = OwnedBookingRecord & BookingDraft & {
   schemaVersion: 1;
   recordId: string;
@@ -31,6 +40,7 @@ export type PersistentBookingRecord = OwnedBookingRecord & BookingDraft & {
   version: number;
   createdAt: string;
   updatedAt: string;
+  reconciliation?: ReconciliationEvidence;
 };
 
 // Exact shape validation prevents accidental persistence of arbitrary payloads,
@@ -67,8 +77,8 @@ const json: Check = value => {
 const summary = shape({
   referenceId: text, guestName: text, roomType: text, checkInDate: isoDate, checkOutDate: isoDate,
   adults: positive, children: integer,
-  bookingStatus: oneOf('pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'unknown'),
-  paymentStatus: oneOf('not_required', 'pending', 'paid', 'failed', 'unknown'),
+  bookingStatus: oneOf('pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'failed', 'unknown'),
+  paymentStatus: oneOf('not_required', 'pending', 'paid', 'failed', 'not_collected', 'unknown'),
   stayState: oneOf('upcoming', 'current', 'past'),
 }, { total: money });
 const draftFields = {
@@ -90,9 +100,17 @@ export const validIdentifiers = shape({ bookingId: text, quoteId: text, invoiceI
 const recordShape = shape({ ...draftFields, schemaVersion: oneOf(1), recordId: text,
   owner: validIdentity, propertyId: positive, submissionKey: validSubmission,
   requestFingerprint: v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v),
-  processingState: oneOf('prepared', 'dispatching', 'uncertain', 'provider_rejected', 'invoice_created'),
+  processingState: oneOf('prepared', 'dispatching', 'uncertain', 'provider_rejected', 'invoice_created', 'reconciled_failed'),
   version: positive, createdAt: timestamp, updatedAt: timestamp,
-}, { totals, simplotelIdentifiers: validIdentifiers });
+}, { totals, simplotelIdentifiers: validIdentifiers, reconciliation: shape({
+  bookingId: text,
+  providerBookingStatus: oneOf('FAILED'),
+  total: money,
+  amountPaid: money,
+  refundAmount: money,
+  reconciledAt: timestamp,
+  source: oneOf('https://bookings.simplotel.com/payment/get_booking_details'),
+}) });
 
 export function assertDraft(value: unknown): asserts value is BookingDraft {
   if (!shape(draftFields, { totals })(value)) throw new Error('Invalid booking snapshot');
@@ -107,4 +125,10 @@ export function assertRecord(value: unknown): asserts value is PersistentBooking
   assertDraft({ summary: v.summary, provenance: v.provenance, guest: v.guest,
     validatedSelection: v.validatedSelection, rooms: v.rooms, ...(v.totals ? { totals: v.totals } : {}) });
   if ((v.processingState === 'invoice_created') !== !!v.simplotelIdentifiers) throw new Error('Invalid stored booking state');
+  if ((v.processingState === 'reconciled_failed') !== !!v.reconciliation) throw new Error('Invalid stored reconciliation state');
+  if (v.reconciliation && (v.summary.referenceId !== v.reconciliation.bookingId ||
+      v.summary.bookingStatus !== 'failed' || v.summary.paymentStatus !== 'not_collected' ||
+      Number(v.reconciliation.amountPaid.amount) !== 0 ||
+      v.reconciliation.total.currency !== 'INR' || v.reconciliation.amountPaid.currency !== 'INR' ||
+      v.reconciliation.refundAmount.currency !== 'INR')) throw new Error('Invalid stored reconciliation evidence');
 }

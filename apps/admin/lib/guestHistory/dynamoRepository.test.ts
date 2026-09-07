@@ -56,6 +56,10 @@ const owner = { issuer: 'https://issuer.test/pool', sub: 'fictional-guest-a' };
 const other = { ...owner, sub: 'fictional-guest-b' };
 const key = 'test-submission-0001';
 const ids = { bookingId: 'TEST-BOOKING', quoteId: 'TEST-QUOTE', invoiceId: 1 };
+const reconciliation = { bookingId: 'TEST-FAILED', providerBookingStatus: 'FAILED' as const,
+  total: { amount: '112.00', currency: 'INR' }, amountPaid: { amount: '0.00', currency: 'INR' },
+  refundAmount: { amount: '0.00', currency: 'INR' }, reconciledAt: '2026-09-07T00:00:00.000Z',
+  source: 'https://bookings.simplotel.com/payment/get_booking_details' as const };
 const money = (amount: string) => ({ amount, currency: 'INR' });
 function draft(): BookingDraft {
   return { provenance: 'test_fixture', guest: { name: 'Fictional Guest', email: 'test@example.com', phone: '+910000000000' },
@@ -137,6 +141,27 @@ test('external booking ID ownership cannot be reassigned; transaction rollback i
   assert.equal((await r.getOwned(other, 7849, key))?.version, 2);
   await r.begin(owner, 99, key, draft()); await r.advance(owner, 99, key, 1, 'dispatching');
   await r.advance(owner, 99, key, 2, 'invoice_created', ids); // Different property namespace.
+});
+test('uncertain attempt reconciles failed once with atomic provider ownership', async () => {
+  const { repo } = setup(); const r = repo();
+  await r.begin(owner, 7849, key, draft());
+  await r.advance(owner, 7849, key, 1, 'dispatching');
+  await r.advance(owner, 7849, key, 2, 'uncertain');
+  const failed = await r.reconcileFailed(owner, 7849, key, 3, reconciliation);
+  assert.equal(failed.processingState, 'reconciled_failed');
+  assert.equal(failed.version, 4);
+  assert.equal(failed.summary.referenceId, 'TEST-FAILED');
+  assert.equal(failed.summary.bookingStatus, 'failed');
+  assert.equal(failed.summary.paymentStatus, 'not_collected');
+  assert.equal(failed.simplotelIdentifiers, undefined);
+  assert.deepEqual(failed.reconciliation, reconciliation);
+  await assert.rejects(r.reconcileFailed(owner, 7849, key, 3, reconciliation), BookingStorageConflict);
+
+  await r.begin(other, 7849, key, draft());
+  await r.advance(other, 7849, key, 1, 'dispatching');
+  await r.advance(other, 7849, key, 2, 'uncertain');
+  await assert.rejects(r.reconcileFailed(other, 7849, key, 3, reconciliation), BookingStorageConflict);
+  assert.equal((await r.getOwned(other, 7849, key))?.processingState, 'uncertain');
 });
 test('unknown/sensitive fields, invalid dates and identifiers rejected before writes', async () => {
   const { db, repo } = setup();

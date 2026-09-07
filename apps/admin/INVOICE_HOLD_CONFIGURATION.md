@@ -78,6 +78,49 @@ For the controlled test, use the `booking_id` returned by `/send-invoice` with
 immediately releases the inventory hold. Do not attempt cleanup with the quote or
 invoice identifier.
 
-A read-only booking/invoice status endpoint for reconciliation remains pending
-Simplotel confirmation. Until it is documented, an uncertain request must be
-reconciled with Simplotel support and must not be retried automatically.
+## Read-only booking reconciliation
+
+Simplotel confirmed the read-only endpoint:
+
+```text
+POST https://bookings.simplotel.com/payment/get_booking_details
+Content-Type: application/x-www-form-urlencoded
+
+bookingId=<booking_id>
+```
+
+The endpoint returns a top-level `booking` object plus a large `content` object.
+The observed `booking` keys are: `bookingId`, `propertyId`, `checkIn`, `checkOut`,
+`totalAmount`, `amountPaid`, `status`, `refundAmount`, `specialRequest`,
+`promocode`, `guestDetails`, `lineItems`, `independent_addons`, `otp`, `pgTxnKey`,
+`pgTxnValues`, `pgTransactionID`, `toggle_value`, `bookingSource`, `cancelledBy`,
+`day_use_only`, `checkin_time`, `showTime`, `dayUseCheckin`, `payLaterDetails`,
+`roomContent`, tax/total breakdown fields, and tracking content. The server-side
+adapter deliberately projects only identifiers, dates, totals and status/payment
+evidence. It never returns guest details, room content, tracking data, payment-link
+keys or the arbitrary `content` object.
+
+For controlled booking `TISXLT`, the endpoint independently returned HTTP 200,
+property `7849`, 05-10-2026 to 06-10-2026, total INR 5,775, amount paid INR 0,
+refund INR 0, booking status `FAILED`, no payment transaction ID, and no payment
+link key. It did not return quote ID `MVZKWK`, invoice ID `INV-P0D4EI`, or a quote
+status. Therefore those identifiers/statuses remain corroborating admin evidence,
+not fields supplied by this endpoint.
+
+The safe normalized mapping for this exact response is:
+
+- processing state: `reconciled_failed`
+- booking status: `failed`
+- payment status: `not_collected`
+
+Any unrecognized provider status maps to `manual_review / unknown / unknown`.
+This read-only capability does not update DynamoDB. An uncertain request must not
+be retried automatically.
+
+The approved controlled reconciliation uses a conditional, atomic transition from
+`uncertain` to `reconciled_failed`. It requires the current record version, updates
+the guest-safe reference to the confirmed booking ID, records `failed` and
+`not_collected` separately, and reserves the provider booking ID to the same
+owner/submission. Reconciled failures remain excluded from My Stays. Quote and
+invoice identifiers not returned by this endpoint are not persisted as confirmed
+reconciliation identifiers.
