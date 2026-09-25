@@ -2,7 +2,8 @@
   "expo": {
     "name": "Holistic Eco-Resort",
     "slug": "holistic-eco-resort",
-    "version": "0.1.0",
+    "version": "1.0.1",
+    "icon": "./assets/app-icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -10,15 +11,40 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.holisticecoresort.guest"
+      "bundleIdentifier": "com.holisticecoresort.guest",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "com.holisticecoresort.guest"
+      "package": "com.holisticecoresort.guest",
+      "versionCode": 4,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#F7F3E8"
+      }
     },
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7F3E8",
+          "image": "./assets/HER-_HER Logo Full.png",
+          "imageWidth": 240,
+          "resizeMode": "contain"
+        }
+      ],
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "releaseChannel": "development",
+      "eas": {
+        "projectId": "276b8d48-7a77-4710-abad-14bdc806555c"
+      }
+    },
+    "owner": "alonix_des"
   }
 }

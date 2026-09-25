@@ -6,6 +6,7 @@ export const guestAuth: GuestAuthProvider = {
   confirmSignIn: response => cognitoAuth.confirmSignIn('guest', response),
   restoreSession: () => cognitoAuth.restoreSession('guest'),
   signOut: () => cognitoAuth.signOut(),
+  deleteAccount: () => cognitoAuth.deleteAccount(),
   signUp: request => cognitoAuth.signUp(request.email, request.password),
   confirmEmail: (email, code) => cognitoAuth.confirmEmail(email, code),
   resendVerification: email => cognitoAuth.resendVerification(email),

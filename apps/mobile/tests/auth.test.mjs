@@ -22,6 +22,7 @@ function fixture(overrides = {}) {
     confirmSignIn: async () => ({ isSignedIn: true, nextStep: { signInStep: 'DONE' } }),
     session: async refresh => { calls.push(['session', refresh]); return tokens(); },
     signOut: async () => { calls.push(['signOut']); },
+    deleteUser: async () => { calls.push(['deleteUser']); },
     clear: async () => { calls.push(['clear']); },
     signUp: async (...args) => { calls.push(['signUp', ...args]); },
     confirmEmail: async (...args) => { calls.push(['confirmEmail', ...args]); },
@@ -171,6 +172,26 @@ test('sign-out clears local data even when network revocation fails', async () =
   assert.deepEqual(calls, [['clear']]);
   assert.equal(JSON.stringify(result).includes('private diagnostic'), false);
 });
+test('account deletion uses Cognito self-service deletion and clears secure local data', async () => {
+  const { core, calls } = fixture();
+  const result = await core.deleteAccount();
+  assert.equal(result.status, 'signed_out');
+  assert.deepEqual(calls, [['deleteUser'], ['clear']]);
+  const failed = fixture({ deleteUser: async () => { throw Object.assign(new Error('private'), { name: 'NotAuthorizedException' }); } });
+  assert.equal((await failed.core.deleteAccount()).code, 'invalid_credentials');
+  assert.deepEqual(failed.calls, []);
+});
+test('account deletion preparation is authenticated and never accepts client ownership', () => {
+  const service = readFileSync(new URL('../src/services/accountDeletion.ts', import.meta.url), 'utf8');
+  const screen = readFileSync(new URL('../src/screens/AccountDeletionScreen.tsx', import.meta.url), 'utf8');
+  assert.match(service, /fetchAuthSession\(\{ forceRefresh: true \}\)/);
+  assert.match(service, /Authorization: `Bearer \$\{accessToken\.toString\(\)\}`/);
+  assert.match(service, /JSON\.stringify\(\{ confirmation: 'DELETE_MY_ACCOUNT' \}\)/);
+  assert.doesNotMatch(service, /sub:|ownerId|propertyId|email:/);
+  assert.match(screen, /confirmation\.trim\(\) !== 'DELETE'/);
+  assert.match(screen, /Simplotel records are not automatically changed/);
+  assert.doesNotMatch(screen, /accessToken|refreshToken|idToken/);
+});
 test('expired refresh token clears local session; network failure does not authorize', async () => {
   const expired = Object.assign(new Error('private'), { name: 'NotAuthorizedException' });
   const { core, calls } = fixture({ session: async () => { throw expired; } });
@@ -234,6 +255,7 @@ test('production auth boundary uses secure storage after configuration and never
   assert.match(source, /USER_SRP_AUTH/);
   assert.match(source, /WHEN_UNLOCKED_THIS_DEVICE_ONLY/);
   assert.doesNotMatch(source, /console\.|SECRET_HASH|clientSecret|accessKeyId|AsyncStorage\./);
+  assert.match(source, /deleteUser/);
   const ui = readFileSync(new URL('../src/components/AccountAuthForm.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(ui, /accessToken|refreshToken|idToken|console\./);
   const staff = readFileSync(new URL('../src/services/employeeAuth.ts', import.meta.url), 'utf8');

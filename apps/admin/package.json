@@ -12,7 +12,9 @@
     "test:booking-preparation": "node --experimental-strip-types --test lib/simplotel/bookingPreparation.test.ts",
     "test:booking-execution": "node --experimental-strip-types --test lib/simplotel/bookingExecution.test.ts",
     "test:booking-reconciliation": "node --experimental-strip-types --test lib/simplotel/bookingReconciliation.test.ts",
-    "test:booking-safety": "node --experimental-strip-types --test lib/simplotel/bookingSafety.test.ts"
+    "test:booking-safety": "node --experimental-strip-types --test lib/simplotel/bookingSafety.test.ts",
+    "test:deployment-safety": "node --experimental-strip-types --test lib/deploymentSafety.test.ts",
+    "test:account-deletion": "node --experimental-strip-types --test lib/accountDeletion/handler.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1125.0",

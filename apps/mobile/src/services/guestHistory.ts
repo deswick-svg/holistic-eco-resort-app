@@ -4,8 +4,8 @@ import { awsConfig } from './aws';
 import { createGuestHistoryClient } from './guestHistoryCore';
 
 export const loadGuestHistory = createGuestHistoryClient({
-  // USB development only; release builds require an explicit HTTPS backend.
-  baseUrl: awsConfig.apiBaseUrl || (__DEV__ ? 'http://127.0.0.1:3001' : ''),
+  // Development and release builds both require an explicit backend origin.
+  baseUrl: awsConfig.apiBaseUrl.replace(/\/+$/, ''),
   allowLocalHttp: __DEV__,
   fetcher: fetch,
   session: async () => {

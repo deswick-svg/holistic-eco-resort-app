@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { SafeAreaView, StyleSheet } from 'react-native';
+import { Platform, StatusBar as NativeStatusBar, StyleSheet } from 'react-native';
+import { initialWindowMetrics, SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { BookingScreen } from './src/screens/BookingScreen';
@@ -30,7 +31,11 @@ export default function App() {
   };
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaProvider>
+      <SafeAreaView
+        style={[styles.root, Platform.OS === 'android' ? styles.androidStatusBarInset : null]}
+        edges={Platform.OS === 'android' ? ['bottom'] : ['top', 'bottom']}
+      >
       <StatusBar style={screen === 'home' ? 'light' : 'dark'} />
       {screen === 'home' ? (
         <HomeScreen onMenu={() => setMenuOpen(true)} onSelect={select} />
@@ -66,10 +71,14 @@ export default function App() {
         <PlaceholderScreen screenKey={screen} onBack={() => setScreen('home')} />
       )}
       {menuOpen ? <MenuDrawer onClose={() => setMenuOpen(false)} onSelect={select} /> : null}
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.cream },
+  androidStatusBarInset: {
+    paddingTop: Math.max(initialWindowMetrics?.insets.top ?? 0, NativeStatusBar.currentHeight ?? 0, 24),
+  },
 });

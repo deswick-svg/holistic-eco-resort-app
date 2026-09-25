@@ -42,8 +42,8 @@ export function PlaceholderScreen({ screenKey, onBack }: { screenKey: string; on
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream },
-  header: { paddingTop: 48, height: 100, backgroundColor: colors.white, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.line },
-  back: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  header: { height: 52, backgroundColor: colors.white, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.line },
+  back: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '800', color: colors.ink },
   body: { padding: 25, paddingTop: 50 },
   icon: { width: 68, height: 68, borderRadius: 20, backgroundColor: colors.sage, alignItems: 'center', justifyContent: 'center' },

@@ -180,9 +180,9 @@ export function ContactScreen({ onBack }: { onBack: () => void }) {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream },
   header: { height: 52, backgroundColor: colors.white, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  back: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { color: colors.ink, fontSize: 17, fontWeight: '800' },
-  headerSpacer: { width: 40 },
+  headerSpacer: { width: 48 },
   scrollContent: { paddingBottom: 42 },
   hero: { height: 375, justifyContent: 'flex-end', backgroundColor: colors.forest },
   heroShade: { ...StyleSheet.absoluteFillObject },

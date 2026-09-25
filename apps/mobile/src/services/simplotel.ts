@@ -3,8 +3,7 @@ import { awsConfig } from "./aws";
 import "./cognitoAuth";
 import { fetchAuthSession } from "aws-amplify/auth";
 
-const SIMPLOTEL_API_BASE_URL =
-  awsConfig.apiBaseUrl || (__DEV__ ? "http://127.0.0.1:3001" : "");
+const SIMPLOTEL_API_BASE_URL = awsConfig.apiBaseUrl.replace(/\/+$/, "");
 
 export type AvailabilityRequest = {
   checkIn: string;

@@ -7,6 +7,7 @@ export interface AuthDriver {
   confirmSignIn(response: string): ReturnType<AuthDriver['signIn']>;
   session(forceRefresh: boolean): Promise<{ id?: Claims; access?: Claims }>;
   signOut(): Promise<void>;
+  deleteUser(): Promise<void>;
   clear(): Promise<void>;
   signUp(email: string, password: string): Promise<unknown>;
   confirmEmail(email: string, code: string): Promise<unknown>;
@@ -139,6 +140,15 @@ export class CognitoAuthCore {
       await this.driver.clear();
       return { status: 'signed_out', message: remoteFailed
         ? 'Signed out on this device. Remote revocation could not be verified.' : 'Signed out on this device.' };
+    });
+  }
+  deleteAccount() {
+    return this.run(async () => {
+      await this.driver.deleteUser();
+      await this.driver.clear();
+      this.challengeRole = null;
+      this.verifySignedInEmail = false;
+      return { status: 'signed_out', message: 'Your guest account has been deleted and this device has been signed out.' };
     });
   }
   signUp(email: string, password: string) {

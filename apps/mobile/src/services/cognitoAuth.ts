@@ -6,6 +6,7 @@ import {
   signIn, confirmSignIn, signOut, signUp, confirmSignUp, resendSignUpCode,
   fetchAuthSession, resetPassword, confirmResetPassword,
   confirmUserAttribute, sendUserAttributeVerificationCode,
+  deleteUser,
 } from 'aws-amplify/auth';
 import { cognitoUserPoolsTokenProvider } from 'aws-amplify/auth/cognito';
 import * as SecureStore from 'expo-secure-store';
@@ -58,6 +59,7 @@ export const cognitoAuth = new CognitoAuthCore({
     return { id: session.tokens?.idToken?.payload, access: session.tokens?.accessToken.payload };
   },
   signOut: () => signOut(),
+  deleteUser: () => deleteUser(),
   clear: () => storage.clear(),
   signUp: (email, password) => signUp({ username: email, password, options: { userAttributes: { email } } }),
   confirmEmail: (email, code) => confirmSignUp({ username: email, confirmationCode: code }),

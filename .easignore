@@ -1,0 +1,22 @@
+node_modules/
+.next/
+.expo/
+.env
+.env.*
+!.env.example
+
+# Generated native/build output and signing material.
+/apps/mobile/android/
+/apps/mobile/**/build/
+/apps/mobile/**/.gradle/
+/apps/mobile/**/.cxx/
+/apps/mobile/**/local.properties
+/apps/mobile/**/*.apk
+/apps/mobile/**/*.aab
+/apps/mobile/**/*.keystore
+/apps/mobile/**/*.jks
+/apps/mobile/**/*.hprof
+
+# Local physical-device verification artifacts.
+/device-ui.xml
+/verify-dining.png
