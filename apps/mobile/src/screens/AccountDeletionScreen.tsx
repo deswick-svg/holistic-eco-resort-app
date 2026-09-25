@@ -5,7 +5,7 @@ import { colors } from '../theme/colors';
 import { guestAuth } from '../services/guestAuth';
 import { prepareAccountDeletion } from '../services/accountDeletion';
 
-const deletionRequestUrl = 'https://www.holisticecoresort.com/account-deletion';
+const deletionRequestUrl = 'https://www.holisticecoresort.com/overview/account-deletion.html';
 
 export function AccountDeletionScreen({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
