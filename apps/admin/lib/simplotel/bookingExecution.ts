@@ -2,6 +2,7 @@ import type {
   SimplotelBookingPayload,
   SimplotelInvoicePayload,
 } from "./bookingPreparation";
+import { simplotelVoiceBotUrl } from "./property.ts";
 
 export type SimplotelBookingConfirmation = {
   booking_id: string;
@@ -222,7 +223,7 @@ async function executeSimplotelRequest({
   let response: Response;
   try {
     response = await fetcher(
-      `https://admin.simplotel.com/api/v1/hotel/${hotelId}/voice-bot/${endpoint}`,
+      simplotelVoiceBotUrl(hotelId, endpoint),
       {
         method: "POST",
         headers: {

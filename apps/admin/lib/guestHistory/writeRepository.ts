@@ -2,8 +2,6 @@ import { createGuestHistoryDynamoTransport, readGuestHistoryDynamoConfig } from 
 import type { DynamoGuestBookingRepository } from './dynamoRepository.ts';
 import { reportInvoiceStageFailure } from './invoiceDiagnostics.ts';
 
-const REGION = 'eu-north-1';
-const TABLE = 'holistic-eco-resort-guest-bookings-dev';
 type WriteRepository = Pick<DynamoGuestBookingRepository, 'begin' | 'advance' | 'getOwned'>;
 
 /** Lazy, server-only write facade. Default SDK credential providers are resolved
@@ -18,7 +16,10 @@ export function createGuestHistoryWriteRepository(
     if (repository) return repository;
     try {
       const config = readConfig();
-      if (config.region !== REGION || config.table !== TABLE) throw new Error('Guest booking storage configuration is unavailable');
+      readGuestHistoryDynamoConfig({
+        AWS_REGION: config.region,
+        GUEST_HISTORY_DYNAMODB_TABLE: config.table,
+      });
       repository = create(config).repository;
       return repository;
     } catch (error) {

@@ -44,6 +44,8 @@ export async function authenticateGuest(request: Request, testVerifier?: GuestVe
     throw new GuestHistoryAuthError(403);
   }
   // Match mobile policy: no group is required for normal self-registered guests.
-  if (groups?.includes('Employees') && !groups.includes('Guests')) throw new GuestHistoryAuthError(403);
+  const employeeGroup = process.env.COGNITO_EMPLOYEE_GROUP?.trim() || 'Employees';
+  const guestGroup = process.env.COGNITO_GUEST_GROUP?.trim() || 'Guests';
+  if (groups?.includes(employeeGroup) && !groups.includes(guestGroup)) throw new GuestHistoryAuthError(403);
   return { issuer: claims.iss, sub: claims.sub };
 }

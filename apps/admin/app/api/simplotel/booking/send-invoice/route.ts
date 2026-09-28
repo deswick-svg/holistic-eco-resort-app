@@ -4,8 +4,7 @@ import { requireServerControlledInvoiceTestAuthorization } from '../../../../../
 import { buildFullOnlineInvoicePayload, getInvoiceInventoryHold } from '../../../../../lib/simplotel/bookingPreparation.ts';
 import { BookingExecutionError, buildPaymentLinkResult, isFullOnlinePaymentEnabled, postToSimplotel } from '../../../../../lib/simplotel/bookingExecution.ts';
 import { classifyProviderError, createSendInvoiceHandler } from '../../../../../lib/simplotel/sendInvoiceHandler.ts';
-
-const HOTEL_ID = 7849;
+import { readSimplotelHotelId, simplotelVoiceBotUrl } from '../../../../../lib/simplotel/property.ts';
 
 export const POST = createSendInvoiceHandler({
   enabled: isFullOnlinePaymentEnabled,
@@ -15,13 +14,14 @@ export const POST = createSendInvoiceHandler({
   authenticate: authenticateGuest,
   repository: guestHistoryWriteRepository,
   revalidate: async (request, accessToken) => {
+    const hotelId = readSimplotelHotelId();
     const rooms = Array.from({ length: request.rooms }, (_, index) => ({
       id: index + 1, adults: request.adults, children: request.children,
       ...(request.children > 0 ? { childAge: request.childAge } : {}),
     }));
-    const response = await fetch(`https://admin.simplotel.com/api/v1/hotel/${HOTEL_ID}/voice-bot/availability`, {
+    const response = await fetch(simplotelVoiceBotUrl(hotelId, "availability"), {
       method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ checkIn: request.checkIn, checkOut: request.checkOut, rooms, propertyId: HOTEL_ID }),
+      body: JSON.stringify({ checkIn: request.checkIn, checkOut: request.checkOut, rooms, propertyId: hotelId }),
       cache: 'no-store',
     });
     if (!response.ok) throw new BookingExecutionError(
@@ -30,7 +30,7 @@ export const POST = createSendInvoiceHandler({
   },
   submitInvoice: async (core, hold, accessToken) => {
     try {
-      const result = await postToSimplotel({ endpoint: 'send-invoice', hotelId: HOTEL_ID, accessToken,
+      const result = await postToSimplotel({ endpoint: 'send-invoice', hotelId: readSimplotelHotelId(), accessToken,
         payload: buildFullOnlineInvoicePayload(core, hold) });
       const verified = buildPaymentLinkResult(result);
       if (verified.invoice_id === undefined) throw new Error('Invoice identifier unavailable');

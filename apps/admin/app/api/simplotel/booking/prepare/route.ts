@@ -6,12 +6,12 @@ import {
   type SimplotelAvailabilityResponse,
 } from "../../../../../lib/simplotel/bookingPreparation";
 import { isFullOnlinePaymentEnabled } from "../../../../../lib/simplotel/bookingExecution";
-
-const SIMPLOTEL_HOTEL_ID = 7849;
-const SIMPLOTEL_ACCESS_TOKEN = process.env.SIMPLOTEL_ACCESS_TOKEN;
+import { readSimplotelHotelId, simplotelVoiceBotUrl } from "../../../../../lib/simplotel/property";
 
 export async function POST(request: Request) {
   try {
+    const SIMPLOTEL_HOTEL_ID = readSimplotelHotelId();
+    const SIMPLOTEL_ACCESS_TOKEN = process.env.SIMPLOTEL_ACCESS_TOKEN;
     if (!SIMPLOTEL_ACCESS_TOKEN) {
       return NextResponse.json(
         { error: { code: "SERVER_CONFIGURATION", message: "Booking preparation is unavailable." } },
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     );
 
     const availabilityResponse = await fetch(
-      `https://admin.simplotel.com/api/v1/hotel/${SIMPLOTEL_HOTEL_ID}/voice-bot/availability`,
+      simplotelVoiceBotUrl(SIMPLOTEL_HOTEL_ID, "availability"),
       {
         method: "POST",
         headers: {

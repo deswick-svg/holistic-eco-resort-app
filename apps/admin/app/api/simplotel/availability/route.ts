@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-
-const SIMPLOTEL_HOTEL_ID = 7849;
-const SIMPLOTEL_ACCESS_TOKEN = process.env.SIMPLOTEL_ACCESS_TOKEN;
+import { readSimplotelHotelId, simplotelVoiceBotUrl } from "../../../../lib/simplotel/property";
 
 export async function POST(request: Request) {
   try {
+    const SIMPLOTEL_HOTEL_ID = readSimplotelHotelId();
+    const SIMPLOTEL_ACCESS_TOKEN = process.env.SIMPLOTEL_ACCESS_TOKEN;
     if (!SIMPLOTEL_ACCESS_TOKEN) {
       return NextResponse.json(
         { error: "Simplotel access token is not configured." },
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     };
 
     const response = await fetch(
-      `https://admin.simplotel.com/api/v1/hotel/${SIMPLOTEL_HOTEL_ID}/voice-bot/availability`,
+      simplotelVoiceBotUrl(SIMPLOTEL_HOTEL_ID, "availability"),
       {
         method: "POST",
         headers: {

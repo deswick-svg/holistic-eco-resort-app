@@ -9,7 +9,9 @@
       "environment": "preview",
       "env": {
         "EXPO_PUBLIC_RELEASE_CHANNEL": "beta",
-        "EXPO_PUBLIC_API_BASE_URL": "https://uu3ket7pnheox233vmujv4d4bq0rxjix.lambda-url.eu-north-1.on.aws"
+        "EXPO_PUBLIC_AWS_REGION": "ap-south-1",
+        "EXPO_PUBLIC_COGNITO_GUEST_GROUP": "Guests",
+        "EXPO_PUBLIC_COGNITO_EMPLOYEE_GROUP": "Employees"
       },
       "android": {
         "buildType": "apk"
@@ -23,7 +25,9 @@
       "environment": "preview",
       "env": {
         "EXPO_PUBLIC_RELEASE_CHANNEL": "beta",
-        "EXPO_PUBLIC_API_BASE_URL": "https://uu3ket7pnheox233vmujv4d4bq0rxjix.lambda-url.eu-north-1.on.aws"
+        "EXPO_PUBLIC_AWS_REGION": "ap-south-1",
+        "EXPO_PUBLIC_COGNITO_GUEST_GROUP": "Guests",
+        "EXPO_PUBLIC_COGNITO_EMPLOYEE_GROUP": "Employees"
       },
       "android": {
         "buildType": "app-bundle"

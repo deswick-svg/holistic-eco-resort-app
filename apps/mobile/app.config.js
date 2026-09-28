@@ -43,10 +43,11 @@ function requirePublicHttpsBackend(rawValue) {
     url.username ||
     url.password ||
     url.search ||
-    url.hash
+    url.hash ||
+    !hostname.endsWith(".lambda-url.ap-south-1.on.aws")
   ) {
     throw new Error(
-      "Beta builds require EXPO_PUBLIC_API_BASE_URL to be an approved public HTTPS backend.",
+      "Beta builds require EXPO_PUBLIC_API_BASE_URL to be an ap-south-1 Lambda Function URL.",
     );
   }
 }
@@ -56,6 +57,9 @@ module.exports = ({ config }) => {
     process.env.EAS_BUILD_PROFILE,
   );
   if (releaseProfile) {
+    if (process.env.EXPO_PUBLIC_AWS_REGION !== "ap-south-1") {
+      throw new Error("Beta builds require EXPO_PUBLIC_AWS_REGION to be ap-south-1.");
+    }
     requirePublicHttpsBackend(process.env.EXPO_PUBLIC_API_BASE_URL ?? "");
   }
 

@@ -1,7 +1,6 @@
 import { GuestHistoryAuthError } from './cognito.ts';
 import type { BookingSummary, GuestBookingRepository, GuestIdentity } from './model.ts';
-
-const propertyId = 7849;
+import { readSimplotelHotelId } from '../simplotel/property.ts';
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: {
     'Cache-Control': 'private, no-store, max-age=0',
@@ -17,6 +16,7 @@ export function createMyBookingsHandler(dependencies: {
   return async (request: Request): Promise<Response> => {
     try {
       const identity = await dependencies.authenticate(request);
+      const propertyId = readSimplotelHotelId();
       // React Native's fetch adds a numeric `_` cache-buster for cache: 'no-store'.
       // Permit only that transport parameter, never identity/booking selectors.
       if (request.method !== 'GET') return json({ error: { code: 'METHOD_NOT_ALLOWED' } }, 405);

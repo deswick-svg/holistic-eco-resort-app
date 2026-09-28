@@ -13,11 +13,11 @@ import {
   postToSimplotel,
   requireBookingCreationEnabled,
 } from "../../../../lib/simplotel/bookingExecution";
-
-const SIMPLOTEL_HOTEL_ID = 7849;
+import { readSimplotelHotelId, simplotelVoiceBotUrl } from "../../../../lib/simplotel/property";
 
 export async function POST(request: Request) {
   try {
+    const SIMPLOTEL_HOTEL_ID = readSimplotelHotelId();
     requireBookingCreationEnabled(isDirectBookingEnabled());
 
     const accessToken = process.env.SIMPLOTEL_ACCESS_TOKEN;
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
           ...(bookingRequest.children > 0 ? { childAge: bookingRequest.childAge } : {}),
         }));
         const availabilityResponse = await fetch(
-          `https://admin.simplotel.com/api/v1/hotel/${SIMPLOTEL_HOTEL_ID}/voice-bot/availability`,
+          simplotelVoiceBotUrl(SIMPLOTEL_HOTEL_ID, "availability"),
           {
             method: "POST",
             headers: {

@@ -46,7 +46,7 @@ test("direct booking remains isolated behind its own disabled flag", () => {
   const guardIndex = source.indexOf(
     "requireBookingCreationEnabled(isDirectBookingEnabled())"
   );
-  const availabilityIndex = source.indexOf("voice-bot/availability");
+  const availabilityIndex = source.indexOf('simplotelVoiceBotUrl(SIMPLOTEL_HOTEL_ID, "availability")');
   const bookIndex = source.indexOf('endpoint: "book"');
   assert.ok(guardIndex >= 0);
   assert.ok(guardIndex < availabilityIndex);

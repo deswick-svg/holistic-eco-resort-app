@@ -5,8 +5,11 @@ import { reportInvoiceStageFailure } from './invoiceDiagnostics.ts';
 import type { InvoiceFailureReporter, InvoiceFailureStage } from './invoiceDiagnostics.ts';
 import { prepareBookingCore } from '../simplotel/bookingPreparation.ts';
 import type { BookingPreparationRequest, JsonValue, PreparedBookingCore } from '../simplotel/bookingPreparation.ts';
+import { readSimplotelHotelId } from '../simplotel/property.ts';
 
-export const GUEST_BOOKING_PROPERTY_ID = 7849;
+export function guestBookingPropertyId() {
+  return readSimplotelHotelId();
+}
 
 export class InvoiceProviderFailure extends Error {
   readonly outcome: 'rejected' | 'uncertain';
@@ -62,7 +65,7 @@ function normalizeDailyPriceDate(value: string) {
 /** Converts only freshly revalidated data. Raw provider responses/tokens are never stored. */
 export function buildInvoiceBookingDraft(prepared: PreparedInvoice, request: BookingPreparationRequest): BookingDraft {
   const { payload, summary } = prepared;
-  if (payload.propertyId !== GUEST_BOOKING_PROPERTY_ID) throw new InvoiceOrchestrationError('INVALID_REQUEST');
+  if (payload.propertyId !== guestBookingPropertyId()) throw new InvoiceOrchestrationError('INVALID_REQUEST');
   const first = payload.lineItems[0];
   if (!first || payload.lineItems.length !== request.rooms) throw new InvoiceOrchestrationError('INVALID_REQUEST');
   const taxes = money(summary.taxesAndFees);
@@ -101,20 +104,21 @@ export function createAuthenticatedInvoiceOrchestrator(deps: {
     try { return await operation(); }
     catch (error) { reportFailure(name, error); throw error; }
   };
-  const recover = (owner: GuestIdentity, key: string) => deps.repository.getOwned(owner, GUEST_BOOKING_PROPERTY_ID, key);
   return async (httpRequest: Request, body: unknown): Promise<Identifiers> => {
+    const propertyId = guestBookingPropertyId();
+    const recover = (owner: GuestIdentity, key: string) => deps.repository.getOwned(owner, propertyId, key);
     const owner = await stage('authentication', () => deps.authenticate(httpRequest));
     const { submissionId } = await stage('request_parsing', () => strictSubmission(body));
-    const { request, prepared } = await stage('fresh_preparation', () => deps.validateAndPrepare(body, GUEST_BOOKING_PROPERTY_ID));
+    const { request, prepared } = await stage('fresh_preparation', () => deps.validateAndPrepare(body, propertyId));
     const draft = await stage('draft_mapping', () => buildInvoiceBookingDraft(prepared, request));
     let record: PersistentBookingRecord;
-    try { record = await stage('repository_begin', () => deps.repository.begin(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, draft)); }
+    try { record = await stage('repository_begin', () => deps.repository.begin(owner, propertyId, submissionId, draft)); }
     catch (error) { throw error instanceof BookingStorageConflict ? new InvoiceOrchestrationError('CONFLICT') : error; }
     const done = identifiers(record);
     if (record.processingState === 'invoice_created' && done) return done;
     if (record.processingState === 'provider_rejected') throw new InvoiceOrchestrationError('PROVIDER_REJECTED');
     if (record.processingState !== 'prepared') throw new InvoiceOrchestrationError('OUTCOME_UNCERTAIN');
-    try { record = await deps.repository.advance(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, record.version, 'dispatching'); }
+    try { record = await deps.repository.advance(owner, propertyId, submissionId, record.version, 'dispatching'); }
     catch (error) {
       if (!(error instanceof BookingStorageConflict)) throw error;
       const current = await recover(owner, submissionId); const recovered = current && identifiers(current);
@@ -125,15 +129,15 @@ export function createAuthenticatedInvoiceOrchestrator(deps: {
     try { result = await deps.submitInvoice(prepared.payload); }
     catch (error) {
       const state = error instanceof InvoiceProviderFailure && error.outcome === 'rejected' ? 'provider_rejected' : 'uncertain';
-      try { await deps.repository.advance(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, record.version, state); } catch { /* fail closed */ }
+      try { await deps.repository.advance(owner, propertyId, submissionId, record.version, state); } catch { /* fail closed */ }
       throw new InvoiceOrchestrationError(state === 'provider_rejected' ? 'PROVIDER_REJECTED' : 'OUTCOME_UNCERTAIN');
     }
-    try { await deps.repository.advance(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, record.version, 'invoice_created', result); }
+    try { await deps.repository.advance(owner, propertyId, submissionId, record.version, 'invoice_created', result); }
     catch {
       const current = await recover(owner, submissionId); const recovered = current && identifiers(current);
       if (current?.processingState === 'invoice_created' && recovered && JSON.stringify(recovered) === JSON.stringify(result)) return recovered;
       if (current?.processingState === 'dispatching') {
-        try { await deps.repository.advance(owner, GUEST_BOOKING_PROPERTY_ID, submissionId, current.version, 'uncertain'); } catch { /* fail closed */ }
+        try { await deps.repository.advance(owner, propertyId, submissionId, current.version, 'uncertain'); } catch { /* fail closed */ }
       }
       throw new InvoiceOrchestrationError('OUTCOME_UNCERTAIN');
     }

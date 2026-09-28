@@ -1,9 +1,14 @@
 node_modules/
 .next/
 .expo/
+
+# Local secrets. Committed templates are apps/mobile/.env.example and apps/admin/.env.example.
 .env
 .env.*
 !.env.example
+**/.env
+**/.env.*
+!**/.env.example
 
 # Expo Prebuild generates native Android sources from app.json and config plugins.
 # Keep the local native project (including its debug signing key) out of Git.
